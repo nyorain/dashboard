@@ -23,6 +23,7 @@ dep_m = cc.find_library('m', required: false)
 # modules
 dep_mpdclient = dependency('libmpdclient')
 dep_alsa = dependency('alsa')
+dep_sqlite3 = dependency('sqlite3')
 
 deps = [
 	dep_xcb,
@@ -34,10 +35,12 @@ deps = [
 
 	dep_mpdclient,
 	dep_alsa,
+	dep_sqlite3,
 ]
 
 executable('dashboard',
 	'src/dashboard.c',
 	'src/mpd.c',
 	'src/volume.c',
+	'src/notes.c',
 	dependencies: deps)

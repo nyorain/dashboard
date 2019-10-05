@@ -30,7 +30,7 @@ struct notes;
 
 struct notes* notes_create();
 void notes_destroy(struct notes*);
-const char** notes_get(struct notes*);
+unsigned notes_get(struct notes*, const char*[static 64]);
 
 
 unsigned get_brightness();

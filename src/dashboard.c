@@ -38,6 +38,7 @@ struct context {
 	// modules
 	struct mpd* mpd;
 	struct volume* volume;
+	struct notes* notes;
 };
 
 // Simple macro that checks cookies returned by xcb *_checked calls
@@ -204,6 +205,8 @@ bool setup(struct context* ctx) {
 void destroy(struct context* ctx) {
 	// modules
 	mpd_destroy(ctx->mpd);
+	volume_destroy(ctx->volume);
+	notes_destroy(ctx->notes);
 
 	// display
 	cairo_destroy(ctx->cr);
@@ -281,6 +284,22 @@ void draw(struct context* ctx) {
 	snprintf(buf, sizeof(buf), "%d%%", vol);
 	cairo_show_text(ctx->cr, buf);
 
+	// notes
+	const char* notes[64];
+	unsigned count = notes_get(ctx->notes, notes);
+	float y = 300.0;
+	for(unsigned i = 0u; i < count; ++i) {
+		// printf("node: %s (%d)\n", buf, len);
+		cairo_move_to(ctx->cr, 32.0, y);
+		cairo_show_text(ctx->cr, notes[i]);
+		free((void*) notes[i]);
+
+		y += 45;
+		if(y > 480) {
+			break;
+		}
+	}
+
 	// finish
 	cairo_surface_flush(ctx->surface);
 	xcb_flush(ctx->connection);
@@ -333,6 +352,7 @@ int main() {
 
 	ctx.mpd = mpd_create();
 	ctx.volume = volume_create();
+	ctx.notes = notes_create();
 
 	while(ctx.run) {
 		xcb_generic_event_t* gev = xcb_wait_for_event(ctx.connection);

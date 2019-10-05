@@ -9,7 +9,6 @@
 #include <alsa/asoundlib.h>
 #include "shared.h"
 
-
 struct volume {
 	snd_mixer_t* handle;
 	snd_mixer_elem_t* elem;
@@ -88,6 +87,5 @@ unsigned volume_get(struct volume* volume) {
 	snd_mixer_selem_get_playback_volume_range(volume->elem, &pmin, &pmax);
 	snd_mixer_selem_get_playback_volume(volume->elem, 0, &pvol);
 
-	printf("%ld %ld %ld\n", pvol, pmin, pmax);
 	return ceil(100 * (pvol - pmin) / (double)(pmax - pmin));
 }
