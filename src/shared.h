@@ -2,6 +2,11 @@
 
 #include <stdbool.h>
 
+// Can be called from any thread, e.g. when a change has been detected.
+// Will wake the main loop and schedule a redraw as soon as possible.
+void schedule_redraw();
+
+
 // mpd
 struct mpd;
 

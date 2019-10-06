@@ -35,11 +35,15 @@ struct context {
 
 	bool run;
 
+	unsigned width, height;
+
 	// modules
 	struct mpd* mpd;
 	struct volume* volume;
 	struct notes* notes;
 };
+
+static struct context* g_ctx;
 
 // Simple macro that checks cookies returned by xcb *_checked calls
 // useful when something triggers and xcb error
@@ -140,8 +144,8 @@ bool setup(struct context* ctx) {
 		visualtype->bits_per_rgb_value);
 
 	// setup xcb window
-	unsigned width = 800;
-	unsigned height = 500;
+	ctx->width = 800;
+	ctx->height = 500;
 
 	uint32_t mask;
   	uint32_t values[3];
@@ -164,8 +168,8 @@ bool setup(struct context* ctx) {
 
 	ctx->window = xcb_generate_id(ctx->connection);
 	XCB_CHECK(xcb_create_window_checked(ctx->connection, vdepth, ctx->window,
-		ctx->screen->root, 0, 0, width, height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
-		visualtype->visual_id, mask, values));
+		ctx->screen->root, 0, 0, ctx->width, ctx->height, 0,
+		XCB_WINDOW_CLASS_INPUT_OUTPUT, visualtype->visual_id, mask, values));
 
 	// window properties
 	// window type is dialog: floating, over other windows
@@ -195,7 +199,7 @@ bool setup(struct context* ctx) {
 
 	// setup cairo
 	ctx->surface = cairo_xcb_surface_create(ctx->connection,
-		ctx->window, visualtype, width, height);
+		ctx->window, visualtype, ctx->width, ctx->height);
 	ctx->cr = cairo_create(ctx->surface);
 
 	ctx->run = true;
@@ -315,6 +319,8 @@ void process(struct context* ctx, xcb_generic_event_t* gev) {
 			xcb_configure_notify_event_t* ev = (xcb_configure_notify_event_t*) gev;
 			cairo_xcb_surface_set_size(ctx->surface, ev->width, ev->height);
 			printf("resizing to %d %d\n", ev->width, ev->height);
+			ctx->width = ev->width;
+			ctx->height = ev->height;
 			break;
 		} case XCB_KEY_PRESS: {
 			xcb_key_press_event_t* ev = (xcb_key_press_event_t*) gev;
@@ -344,6 +350,37 @@ void process(struct context* ctx, xcb_generic_event_t* gev) {
 	}
 }
 
+void schedule_redraw() {
+	// NOTE: not exactly sure if xcb is threadsafe and we can use
+	// this at any time tbh... there is no XInitThreads for xcb,
+	// iirc it is always threadsafe but that should be investigated
+
+	/*
+	g_ctx->redraw = true;
+
+	// wake main thread by forcing it to receive an event
+	xcb_client_message_event_t event = {0};
+	event.window = g_ctx->window;
+	event.response_type = XCB_CLIENT_MESSAGE;
+	event.format = 32;
+
+	xcb_send_event(g_ctx->connection, 0, g_ctx->window, 0, (const char*) &event);
+	xcb_flush(g_ctx->connection);
+	*/
+
+	xcb_expose_event_t event = {0};
+	event.window = g_ctx->window;
+	event.response_type = XCB_EXPOSE;
+	event.x = 0;
+	event.y = 0;
+	event.width = g_ctx->width;
+	event.height = g_ctx->height;
+	event.count = 1;
+
+	xcb_send_event(g_ctx->connection, 0, g_ctx->window, 0, (const char*) &event);
+	xcb_flush(g_ctx->connection);
+}
+
 int main() {
 	struct context ctx;
 	if(!setup(&ctx)) {
@@ -353,6 +390,7 @@ int main() {
 	ctx.mpd = mpd_create();
 	ctx.volume = volume_create();
 	ctx.notes = notes_create();
+	g_ctx = &ctx;
 
 	while(ctx.run) {
 		xcb_generic_event_t* gev = xcb_wait_for_event(ctx.connection);
