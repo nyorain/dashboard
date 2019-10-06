@@ -27,7 +27,7 @@ struct notes* notes_create() {
 	err = sqlite3_prepare_v2(notes->db,
 		"SELECT DISTINCT id, content FROM nodes \
 			LEFT JOIN tags ON nodes.id = tags.node \
-			WHERE tag = 'db' \
+			WHERE tag = 'db' AND archived = 0 \
 			ORDER BY id DESC", -1, &notes->stmt, 0);
 	if(err != SQLITE_OK) {
 		printf("Can't prepare sqlite stmt: %s\n", sqlite3_errmsg(notes->db));
