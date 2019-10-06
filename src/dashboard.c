@@ -6,9 +6,11 @@
 #include <string.h>
 #include <assert.h>
 #include <time.h>
+#include <errno.h>
 
 #include <unistd.h>
 #include <linux/input.h>
+#include <sys/poll.h>
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_ewmh.h>
@@ -18,6 +20,11 @@
 #include <cairo/cairo-xcb.h>
 
 #include "shared.h"
+
+struct poll_handler {
+	pollfd_callback callback;
+	void* data;
+};
 
 struct context {
 	xcb_connection_t* connection;
@@ -32,6 +39,10 @@ struct context {
 
 	cairo_surface_t* surface;
 	cairo_t* cr;
+
+	unsigned poll_count;
+	struct pollfd* pollfds;
+	struct poll_handler* poll_handler;
 
 	bool run;
 
@@ -56,6 +67,179 @@ static struct context* g_ctx;
 	}}
 
 
+static int poll_nosig(struct pollfd* fds, nfds_t nfds, int timeout) {
+	while(true) {
+		int ret = poll(fds, nfds, timeout);
+		if(ret != -1 || errno != EINTR) {
+			return ret;
+		}
+	}
+}
+
+void add_poll_handler(int fd, unsigned events, void* data,
+		pollfd_callback callback) {
+	struct context* ctx = g_ctx;
+
+	unsigned c = ++ctx->poll_count;
+	ctx->poll_handler = realloc(ctx->poll_handler, c * sizeof(*ctx->poll_handler));
+	ctx->pollfds = realloc(ctx->pollfds, c * sizeof(*ctx->pollfds));
+
+	--c;
+	ctx->pollfds[c].fd = fd;
+	ctx->pollfds[c].events = events;
+	ctx->pollfds[c].revents = 0;
+
+	ctx->poll_handler[c].callback = callback;
+	ctx->poll_handler[c].data = data;
+}
+
+void draw(struct context* ctx) {
+	// printf("drawing\n");
+	char buf[256];
+
+	// background
+	cairo_set_source_rgba(ctx->cr, 0.1, 0.1, 0.1, 0.6);
+	cairo_set_operator(ctx->cr, CAIRO_OPERATOR_SOURCE);
+	cairo_paint(ctx->cr);
+
+	// date & time
+	time_t t = time(NULL);
+	struct tm tm_info;
+	assert(localtime_r(&t, &tm_info));
+
+	strftime(buf, sizeof(buf), "%H:%M", &tm_info);
+	cairo_select_font_face(ctx->cr, "DejaVu Sans",
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+	cairo_set_font_size(ctx->cr, 50.0);
+	cairo_set_source_rgb(ctx->cr, 0.9, 0.9, 0.9);
+	cairo_move_to(ctx->cr, 32.0, 70.0);
+	cairo_show_text(ctx->cr, buf);
+
+	strftime(buf, sizeof(buf), "%d.%m.%y", &tm_info);
+	cairo_set_font_size(ctx->cr, 20.0);
+	cairo_set_source_rgba(ctx->cr, 0.8, 0.8, 0.8, 0.8);
+	cairo_move_to(ctx->cr, 32.0, 100.0);
+	cairo_show_text(ctx->cr, buf);
+
+	// music
+	cairo_set_font_size(ctx->cr, 18.0);
+	cairo_select_font_face(ctx->cr, "FontAwesome",
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+
+	const char* sym;
+	int mpdstate = mpd_get_state(ctx->mpd);
+	switch(mpdstate) {
+		case 1: sym = u8""; break;
+		case 2: sym = u8""; break;
+		case 3: sym = u8""; break;
+		default: sym = "?"; break;
+	}
+
+	const char* song = mpd_get_song(ctx->mpd);
+	if(!song || mpdstate == 1) {
+		song = "-";
+	}
+
+	cairo_set_source_rgba(ctx->cr, 0.8, 0.8, 0.8, 0.8);
+	cairo_move_to(ctx->cr, 32.0, 180.0);
+	cairo_show_text(ctx->cr, sym);
+
+	cairo_select_font_face(ctx->cr, "DejaVu Sans",
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+	cairo_move_to(ctx->cr, 60.0, 180.0);
+	cairo_show_text(ctx->cr, song);
+
+	// volume
+	cairo_move_to(ctx->cr, 32.0, 220.0);
+	cairo_select_font_face(ctx->cr, "FontAwesome",
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+	cairo_show_text(ctx->cr, u8"");
+
+	cairo_select_font_face(ctx->cr, "DejaVu Sans",
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+	cairo_move_to(ctx->cr, 60.0, 220.0);
+
+	unsigned vol = volume_get(ctx->volume);
+	snprintf(buf, sizeof(buf), "%d%%", vol);
+	cairo_show_text(ctx->cr, buf);
+
+	// notes
+	const char* notes[64];
+	unsigned count = notes_get(ctx->notes, notes);
+	float y = 300.0;
+	for(unsigned i = 0u; i < count; ++i) {
+		// printf("node: %s (%d)\n", buf, len);
+		cairo_move_to(ctx->cr, 32.0, y);
+		cairo_show_text(ctx->cr, notes[i]);
+		free((void*) notes[i]);
+
+		y += 45;
+		if(y > 480) {
+			break;
+		}
+	}
+
+	// finish
+	cairo_surface_flush(ctx->surface);
+	xcb_flush(ctx->connection);
+}
+
+
+void process(struct context* ctx, xcb_generic_event_t* gev) {
+	switch(gev->response_type & 0x7f) {
+		case XCB_MAP_NOTIFY:
+		case XCB_EXPOSE:
+			draw(ctx);
+			break;
+		case XCB_CONFIGURE_NOTIFY: {
+			xcb_configure_notify_event_t* ev = (xcb_configure_notify_event_t*) gev;
+			cairo_xcb_surface_set_size(ctx->surface, ev->width, ev->height);
+			printf("resizing to %d %d\n", ev->width, ev->height);
+			ctx->width = ev->width;
+			ctx->height = ev->height;
+			break;
+		} case XCB_KEY_PRESS: {
+			xcb_key_press_event_t* ev = (xcb_key_press_event_t*) gev;
+			if((ev->detail - 8) == KEY_ESC) {
+				// printf("escape pressed, exiting\n");
+				ctx->run = false;
+			}
+			break;
+		} case XCB_CLIENT_MESSAGE: {
+			xcb_client_message_event_t* ev = (xcb_client_message_event_t*) gev;
+			uint32_t protocol = ev->data.data32[0];
+			if(protocol == ctx->atoms.wm_delete_window) {
+				// printf("received close event for window, exiting\n");
+				ctx->run = false;
+			} else if(protocol == ctx->ewmh._NET_WM_PING) {
+				// respond with poing
+				xcb_ewmh_send_wm_ping(&ctx->ewmh,
+					ctx->screen->root, ev->data.data32[1]);
+			}
+			break;
+		} case 0: {
+			xcb_generic_error_t* error = (xcb_generic_error_t*) gev;
+			printf("retrieved xcb error code %d\n", error->error_code);
+			break;
+		} default:
+			break;
+	}
+}
+
+
+static void poll_xcb(int fd, unsigned revents, void* data) {
+	(void) data;
+	(void) fd;
+	(void) revents;
+	struct context* ctx = g_ctx;
+
+	xcb_generic_event_t* gev;
+	while((gev = xcb_poll_for_event(ctx->connection))) {
+		process(ctx, gev);
+		free(gev);
+	}
+}
+
 bool setup(struct context* ctx) {
 	// setup xcb connection
 	ctx->connection = xcb_connect(NULL, NULL);
@@ -64,6 +248,10 @@ bool setup(struct context* ctx) {
 		printf("xcb connection error: %d\n", err);
 		return false;
 	}
+
+	// make sure connection is polled in main loop for events
+	add_poll_handler(xcb_get_file_descriptor(ctx->connection), POLLIN,
+		ctx, poll_xcb);
 
 	ctx->screen = xcb_setup_roots_iterator(xcb_get_setup(ctx->connection)).data;
 
@@ -220,154 +408,10 @@ void destroy(struct context* ctx) {
 	xcb_disconnect(ctx->connection);
 }
 
-void draw(struct context* ctx) {
-	// printf("drawing\n");
-	char buf[256];
-
-	// background
-	cairo_set_source_rgba(ctx->cr, 0.1, 0.1, 0.1, 0.6);
-	cairo_set_operator(ctx->cr, CAIRO_OPERATOR_SOURCE);
-	cairo_paint(ctx->cr);
-
-	// date & time
-	time_t t = time(NULL);
-	struct tm tm_info;
-	assert(localtime_r(&t, &tm_info));
-
-	strftime(buf, sizeof(buf), "%H:%M", &tm_info);
-	cairo_select_font_face(ctx->cr, "DejaVu Sans",
-		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-	cairo_set_font_size(ctx->cr, 50.0);
-	cairo_set_source_rgb(ctx->cr, 0.9, 0.9, 0.9);
-	cairo_move_to(ctx->cr, 32.0, 70.0);
-	cairo_show_text(ctx->cr, buf);
-
-	strftime(buf, sizeof(buf), "%d.%m.%y", &tm_info);
-	cairo_set_font_size(ctx->cr, 20.0);
-	cairo_set_source_rgba(ctx->cr, 0.8, 0.8, 0.8, 0.8);
-	cairo_move_to(ctx->cr, 32.0, 100.0);
-	cairo_show_text(ctx->cr, buf);
-
-	// music
-	cairo_set_font_size(ctx->cr, 18.0);
-	cairo_select_font_face(ctx->cr, "FontAwesome",
-		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-
-	const char* sym;
-	if(mpd_get_playing(ctx->mpd)) {
-		sym = u8"";
-	} else {
-		sym = u8"";
-	}
-
-	cairo_set_source_rgba(ctx->cr, 0.8, 0.8, 0.8, 0.8);
-	cairo_move_to(ctx->cr, 32.0, 180.0);
-	cairo_show_text(ctx->cr, sym);
-
-	cairo_select_font_face(ctx->cr, "DejaVu Sans",
-		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-	if(!mpd_get_song(ctx->mpd, sizeof(buf), buf)) {
-		buf[0] = '-';
-		buf[1] = '\0';
-	}
-
-	cairo_move_to(ctx->cr, 60.0, 180.0);
-	cairo_show_text(ctx->cr, buf);
-
-	// volume
-	cairo_move_to(ctx->cr, 32.0, 220.0);
-	cairo_select_font_face(ctx->cr, "FontAwesome",
-		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-	cairo_show_text(ctx->cr, u8"");
-
-	cairo_select_font_face(ctx->cr, "DejaVu Sans",
-		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-	cairo_move_to(ctx->cr, 60.0, 220.0);
-
-	unsigned vol = volume_get(ctx->volume);
-	snprintf(buf, sizeof(buf), "%d%%", vol);
-	cairo_show_text(ctx->cr, buf);
-
-	// notes
-	const char* notes[64];
-	unsigned count = notes_get(ctx->notes, notes);
-	float y = 300.0;
-	for(unsigned i = 0u; i < count; ++i) {
-		// printf("node: %s (%d)\n", buf, len);
-		cairo_move_to(ctx->cr, 32.0, y);
-		cairo_show_text(ctx->cr, notes[i]);
-		free((void*) notes[i]);
-
-		y += 45;
-		if(y > 480) {
-			break;
-		}
-	}
-
-	// finish
-	cairo_surface_flush(ctx->surface);
-	xcb_flush(ctx->connection);
-}
-
-void process(struct context* ctx, xcb_generic_event_t* gev) {
-	switch(gev->response_type & 0x7f) {
-		case XCB_MAP_NOTIFY:
-		case XCB_EXPOSE:
-			draw(ctx);
-			break;
-		case XCB_CONFIGURE_NOTIFY: {
-			xcb_configure_notify_event_t* ev = (xcb_configure_notify_event_t*) gev;
-			cairo_xcb_surface_set_size(ctx->surface, ev->width, ev->height);
-			printf("resizing to %d %d\n", ev->width, ev->height);
-			ctx->width = ev->width;
-			ctx->height = ev->height;
-			break;
-		} case XCB_KEY_PRESS: {
-			xcb_key_press_event_t* ev = (xcb_key_press_event_t*) gev;
-			if((ev->detail - 8) == KEY_ESC) {
-				// printf("escape pressed, exiting\n");
-				ctx->run = false;
-			}
-			break;
-		} case XCB_CLIENT_MESSAGE: {
-			xcb_client_message_event_t* ev = (xcb_client_message_event_t*) gev;
-			uint32_t protocol = ev->data.data32[0];
-			if(protocol == ctx->atoms.wm_delete_window) {
-				// printf("received close event for window, exiting\n");
-				ctx->run = false;
-			} else if(protocol == ctx->ewmh._NET_WM_PING) {
-				// respond with poing
-				xcb_ewmh_send_wm_ping(&ctx->ewmh,
-					ctx->screen->root, ev->data.data32[1]);
-			}
-			break;
-		} case 0: {
-			xcb_generic_error_t* error = (xcb_generic_error_t*) gev;
-			printf("retrieved xcb error code %d\n", error->error_code);
-			break;
-		} default:
-			break;
-	}
-}
-
 void schedule_redraw() {
 	// NOTE: not exactly sure if xcb is threadsafe and we can use
 	// this at any time tbh... there is no XInitThreads for xcb,
 	// iirc it is always threadsafe but that should be investigated
-
-	/*
-	g_ctx->redraw = true;
-
-	// wake main thread by forcing it to receive an event
-	xcb_client_message_event_t event = {0};
-	event.window = g_ctx->window;
-	event.response_type = XCB_CLIENT_MESSAGE;
-	event.format = 32;
-
-	xcb_send_event(g_ctx->connection, 0, g_ctx->window, 0, (const char*) &event);
-	xcb_flush(g_ctx->connection);
-	*/
-
 	xcb_expose_event_t event = {0};
 	event.window = g_ctx->window;
 	event.response_type = XCB_EXPOSE;
@@ -382,7 +426,9 @@ void schedule_redraw() {
 }
 
 int main() {
-	struct context ctx;
+	struct context ctx = {0};
+	g_ctx = &ctx;
+
 	if(!setup(&ctx)) {
 		return 1;
 	}
@@ -390,12 +436,21 @@ int main() {
 	ctx.mpd = mpd_create();
 	ctx.volume = volume_create();
 	ctx.notes = notes_create();
-	g_ctx = &ctx;
 
 	while(ctx.run) {
-		xcb_generic_event_t* gev = xcb_wait_for_event(ctx.connection);
-		process(&ctx, gev);
-		free(gev);
+		int ret = poll_nosig(ctx.pollfds, ctx.poll_count, -1);
+		if(ret == -1) {
+			printf("poll failed: %s (%d)\n", strerror(errno), errno);
+			continue; // break here?
+		}
+
+		for(unsigned i = 0u; i < ctx.poll_count; ++i) {
+			if(ctx.pollfds[i].revents) {
+				ctx.poll_handler[i].callback(ctx.pollfds[i].fd,
+					ctx.pollfds[i].revents, ctx.poll_handler[i].data);
+				ctx.pollfds[i].revents = 0;
+			}
+		}
 	}
 
 	destroy(&ctx);

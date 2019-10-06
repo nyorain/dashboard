@@ -11,29 +11,12 @@
 #include <pthread.h>
 #include "shared.h"
 
-// TODO: there may be race conditions between mixer_callback (and volume_thread)
-// and the volume_get etc read functions
-// TODO: cleanup not done correctly. volume_thread never ends, it should
-// be joined. Not that easy though, we would have to wake up snd_mixer_wait
-// somehow? probably better to do this via one central poll instead
-// of multiple threads i guess
-
 struct volume {
 	snd_mixer_t* handle;
 	snd_mixer_elem_t* elem;
-	pthread_t thread;
 };
 
-static void* volume_thread(void* data) {
-	struct volume* volume = (struct volume*) data;
-	while(true) {
-		snd_mixer_wait(volume->handle, INT_MAX);
-		snd_mixer_handle_events(volume->handle);
-	}
-	return NULL;
-}
-
-int elem_callback(snd_mixer_elem_t* elem, unsigned int mask){
+static int elem_callback(snd_mixer_elem_t* elem, unsigned int mask){
 	(void) mask;
 	(void) elem;
 	printf("elem callback!\n");
@@ -41,12 +24,19 @@ int elem_callback(snd_mixer_elem_t* elem, unsigned int mask){
 	return 0;
 }
 
+static void volume_poll(int fd, unsigned revents, void* data) {
+	(void) fd;
+	(void) revents;
+	struct volume* volume = (struct volume*) data;
+	snd_mixer_handle_events(volume->handle);
+}
+
 struct volume* volume_create() {
-	static const char card[64] = "default";
+	static const char* card = "default";
 	static const unsigned smixer_level = 0;
 
 	int err;
-	struct volume* volume = calloc(1, sizeof(volume));
+	struct volume* volume = calloc(1, sizeof(*volume));
 
 	snd_mixer_selem_id_t* sid;
 	snd_mixer_selem_id_alloca(&sid);
@@ -93,8 +83,13 @@ struct volume* volume_create() {
 
 	snd_mixer_elem_set_callback(volume->elem, elem_callback);
 
-	// init thread that waits for events
-	err = pthread_create(&volume->thread, NULL, volume_thread, volume);
+	int count = snd_mixer_poll_descriptors_count(volume->handle);
+	printf("%d volume poll fds\n", count);
+	struct pollfd* pfds = calloc(count, sizeof(*pfds));
+	assert(snd_mixer_poll_descriptors(volume->handle, pfds, count) == count);
+	for(int i = 0; i < count; ++i) {
+		add_poll_handler(pfds[i].fd, pfds[i].events, volume, volume_poll);
+	}
 
 	return volume;
 

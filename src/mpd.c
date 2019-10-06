@@ -6,11 +6,15 @@
 #include <string.h>
 #include <assert.h>
 #include <time.h>
-
+#include <sys/poll.h>
 #include <mpd/client.h>
+#include "shared.h"
 
 struct mpd {
 	struct mpd_connection* connection;
+	char songbuf[64]; // "artist - title"
+	enum mpd_state state;
+	bool idle;
 };
 
 static bool mpd_check_error(struct mpd* mpd) {
@@ -24,37 +28,82 @@ static bool mpd_check_error(struct mpd* mpd) {
 	}
 }
 
-struct mpd* mpd_create() {
-	struct mpd* mpd = calloc(1, sizeof(mpd));
-	mpd->connection = mpd_connection_new(NULL, 0, 0);
-	if(!mpd_check_error(mpd)) {
-		printf("Succesfully connected to mpd\n");
-	}
-
-	return mpd;
-}
-
-void mpd_destroy(struct mpd* mpd) {
-	mpd_connection_free(mpd->connection);
-	free(mpd);
-}
-
-bool mpd_get_song(struct mpd* mpd, unsigned buf_size, char* buf) {
+static void mpd_fill(struct mpd* mpd) {
+	// song
 	struct mpd_song* song = mpd_run_current_song(mpd->connection);
 	if(!song) {
+		// TODO: this always returns a song, even when stopped...
+		// rather user the state
 		mpd_check_error(mpd);
-		return false;
+		mpd->songbuf[0] = '\0';
+		return;
 	}
 
 	const char* artist = mpd_song_get_tag(song, MPD_TAG_ARTIST, 0);
 	const char* title = mpd_song_get_tag(song, MPD_TAG_TITLE, 0);
-	snprintf(buf, buf_size, "%s - %s", artist, title);
-	return true;
+	assert(artist && title);
+	snprintf(mpd->songbuf, sizeof(mpd->songbuf), "%s - %s", artist, title);
+
+	struct mpd_status* status = mpd_run_status(mpd->connection);
+	mpd->state = mpd_status_get_state(status);
+	mpd_status_free(status);
 }
 
-bool mpd_get_playing(struct mpd* mpd) {
-	struct mpd_status* status = mpd_run_status(mpd->connection);
-	bool playing = (mpd_status_get_state(status) == MPD_STATE_PLAY);
-	mpd_status_free(status);
-	return playing;
+static void mpd_poll(int fd, unsigned revents, void* data) {
+	(void) fd;
+	(void) revents;
+	struct mpd* mpd = (struct mpd*) data;
+
+	if(mpd_run_noidle(mpd->connection) == MPD_IDLE_PLAYER) {
+		printf("mpd idle player\n");
+		mpd_fill(mpd);
+		schedule_redraw();
+	}
+
+	mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER);
+}
+
+struct mpd* mpd_create() {
+	struct mpd* mpd = calloc(1, sizeof(*mpd));
+	mpd->connection = mpd_connection_new(NULL, 0, 0);
+	if(mpd_check_error(mpd)) {
+		goto err;
+	}
+
+	mpd_fill(mpd);
+
+	// add to poll list
+	add_poll_handler(mpd_connection_get_fd(mpd->connection), POLLIN,
+		mpd, mpd_poll);
+
+	// start initial idling
+	mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER);
+	mpd->idle = true;
+
+	return mpd;
+
+err:
+	mpd_destroy(mpd);
+	return NULL;
+}
+
+void mpd_destroy(struct mpd* mpd) {
+	if(mpd->idle) {
+		mpd_run_noidle(mpd->connection);
+	}
+
+	mpd_connection_free(mpd->connection);
+	free(mpd);
+}
+
+const char* mpd_get_song(struct mpd* mpd) {
+	if(mpd->songbuf[0] == '\0') {
+		return NULL;
+	}
+
+	return mpd->songbuf;
+}
+
+int mpd_get_state(struct mpd* mpd) {
+	return (int) mpd->state;
 }

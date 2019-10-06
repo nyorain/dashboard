@@ -2,8 +2,10 @@
 
 #include <stdbool.h>
 
-// Can be called from any thread, e.g. when a change has been detected.
-// Will wake the main loop and schedule a redraw as soon as possible.
+typedef void(*pollfd_callback)(int fd, unsigned revents, void* data);
+void add_poll_handler(int fd, unsigned events, void* data,
+		pollfd_callback callback);
+
 void schedule_redraw();
 
 
@@ -13,13 +15,13 @@ struct mpd;
 struct mpd* mpd_create();
 void mpd_destroy(struct mpd*);
 
-// Prints an 'artist - title' description of the currently playing song
-// into the given sized buffer.
-// Returns false and doesn't print anything if there is no current song
-bool mpd_get_song(struct mpd*, unsigned buf_size, char* buf);
+// Returns an 'artist - title' description of the current song.
+// Returns NULL if there is no current song (mpd is in stopped state).
+const char* mpd_get_song(struct mpd*);
 
-// Returns whether mpd is currently playing
-bool mpd_get_playing(struct mpd*);
+// Returns the current mpd state:
+// 1: stop, 2: play, 3: pause
+int mpd_get_state(struct mpd*);
 
 
 // volume
@@ -38,13 +40,14 @@ void notes_destroy(struct notes*);
 unsigned notes_get(struct notes*, const char*[static 64]);
 
 
-unsigned get_brightness();
+// TODO: implement for laptop
+// unsigned get_brightness();
 
 // look into https://github.com/aravind/libacpi
-struct battery_status {
-	unsigned percent;
-	unsigned prediction; // in minutes
-	bool charging;
-};
-
-struct battery_status get_battery_status();
+// struct battery_status {
+// 	unsigned percent;
+// 	unsigned prediction; // in minutes
+// 	bool charging;
+// };
+//
+// struct battery_status get_battery_status();

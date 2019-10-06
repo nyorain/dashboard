@@ -17,7 +17,7 @@ struct notes {
 };
 
 struct notes* notes_create() {
-	struct notes* notes = calloc(1, sizeof(notes));
+	struct notes* notes = calloc(1, sizeof(*notes));
 	int err = sqlite3_open(nodesfile, &notes->db);
 	if(err != SQLITE_OK) {
 		printf("Can't open sqlite database: %s\n", sqlite3_errmsg(notes->db));
@@ -55,11 +55,12 @@ unsigned notes_get(struct notes* notes, const char* contents[static 64]) {
 	while((err = sqlite3_step(notes->stmt)) == SQLITE_ROW && ret < 64) {
 		const char* content = (const char*) sqlite3_column_text(notes->stmt, 1);
 		const char* ptr = strchr(content, '\n');
-		unsigned len = ptr ? (size_t)(ptr - content) : strlen(content);
+		unsigned len = (ptr ? (size_t)(ptr - content) : strlen(content)) + 1;
 		len = len < 256 ? len : 256;
 
 		char* buf = calloc(1, len);
-		strncpy(buf, content, len);
+		strncpy(buf, content, len - 1);
+		buf[len - 1] = '\0';
 
 		contents[ret++] = buf;
 	}
