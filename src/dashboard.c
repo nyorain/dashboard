@@ -52,6 +52,7 @@ struct context {
 	struct mpd* mpd;
 	struct volume* volume;
 	struct notes* notes;
+	struct brightness* brightness;
 };
 
 static struct context* g_ctx;
@@ -163,6 +164,23 @@ void draw(struct context* ctx) {
 	snprintf(buf, sizeof(buf), "%d%%", vol);
 	cairo_show_text(ctx->cr, buf);
 
+	// brightness
+	if(ctx->brightness) {
+		int brightness = get_brightness(ctx->brightness);
+		if(brightness >= 0) {
+			cairo_move_to(ctx->cr, 132.0, 220.0);
+			cairo_select_font_face(ctx->cr, "FontAwesome",
+				CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+			cairo_show_text(ctx->cr, u8"");
+
+			cairo_select_font_face(ctx->cr, "DejaVu Sans",
+				CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+			cairo_move_to(ctx->cr, 160.0, 220.0);
+			snprintf(buf, sizeof(buf), "%d%%", brightness);
+			cairo_show_text(ctx->cr, buf);
+		}
+	}
+
 	// notes
 	const char* notes[64];
 	unsigned count = notes_get(ctx->notes, notes);
@@ -235,6 +253,7 @@ static void poll_xcb(int fd, unsigned revents, void* data) {
 
 	xcb_generic_event_t* gev;
 	while((gev = xcb_poll_for_event(ctx->connection))) {
+		printf("poll xcb\n");
 		process(ctx, gev);
 		free(gev);
 	}
@@ -396,9 +415,10 @@ bool setup(struct context* ctx) {
 
 void destroy(struct context* ctx) {
 	// modules
-	mpd_destroy(ctx->mpd);
-	volume_destroy(ctx->volume);
-	notes_destroy(ctx->notes);
+	if(ctx->mpd) mpd_destroy(ctx->mpd);
+	if(ctx->volume) volume_destroy(ctx->volume);
+	if(ctx->notes) notes_destroy(ctx->notes);
+	if(ctx->brightness) brightness_destroy(ctx->brightness);
 
 	// display
 	cairo_destroy(ctx->cr);
@@ -436,6 +456,7 @@ int main() {
 	ctx.mpd = mpd_create();
 	ctx.volume = volume_create();
 	ctx.notes = notes_create();
+	ctx.brightness = brightness_create();
 
 	while(ctx.run) {
 		int ret = poll_nosig(ctx.pollfds, ctx.poll_count, -1);

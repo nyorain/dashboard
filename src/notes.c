@@ -9,7 +9,7 @@
 #include <sqlite3.h>
 #include "shared.h"
 
-static const char* nodesfile = "/mnt/data/docs/nodes/nodes.db";
+static const char* nodesfile = "/home/nyorain/docs/nodes/nodes.db";
 
 struct notes {
 	sqlite3* db;

@@ -43,4 +43,6 @@ executable('dashboard',
 	'src/mpd.c',
 	'src/volume.c',
 	'src/notes.c',
+	'src/inotify.c',
+	'src/brightness.c',
 	dependencies: deps)
