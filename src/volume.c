@@ -115,3 +115,15 @@ unsigned volume_get(struct volume* volume) {
 
 	return round(100 * (pvol - pmin) / (double)(pmax - pmin));
 }
+
+bool volume_get_muted(struct volume* volume) {
+	if(snd_mixer_selem_has_common_switch(volume->elem) &&
+			!snd_mixer_selem_has_playback_switch(volume->elem)) {
+		printf("volume_get_muted: elem has no switch\n");
+		return false;
+	}
+
+	int muted;
+	snd_mixer_selem_get_playback_switch(volume->elem, 0, &muted);
+	return muted == 0;
+}

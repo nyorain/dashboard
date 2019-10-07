@@ -37,6 +37,7 @@ struct volume;
 struct volume* volume_create(void);
 void volume_destroy(struct volume*);
 unsigned volume_get(struct volume*);
+bool volume_get_muted(struct volume*);
 
 
 // notes
@@ -56,12 +57,16 @@ void brightness_destroy(struct brightness*);
 // A return code <0 means that the brightness couldn't be read.
 int get_brightness(struct brightness*);
 
-// TODO: battery/energy/power status for laptop
 // look into https://github.com/aravind/libacpi
-// struct battery_status {
-// 	unsigned percent;
-// 	unsigned prediction; // in minutes
-// 	bool charging;
-// };
-//
-// struct battery_status get_battery_status();
+struct battery;
+struct battery* battery_create(void);
+void battery_destroy(struct battery*);
+
+struct battery_status {
+	unsigned percent;
+	// unsigned prediction; // in minutes; TODO
+	bool charging;
+	float wattage;
+};
+
+struct battery_status battery_get(struct battery* battery);

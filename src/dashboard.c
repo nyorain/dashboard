@@ -53,6 +53,7 @@ struct context {
 	struct volume* volume;
 	struct notes* notes;
 	struct brightness* brightness;
+	struct battery* battery;
 };
 
 static struct context* g_ctx;
@@ -125,7 +126,7 @@ void draw(struct context* ctx) {
 	// music
 	cairo_set_font_size(ctx->cr, 18.0);
 	cairo_select_font_face(ctx->cr, "FontAwesome",
-		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 
 	const char* sym;
 	int mpdstate = mpd_get_state(ctx->mpd);
@@ -146,37 +147,90 @@ void draw(struct context* ctx) {
 	cairo_show_text(ctx->cr, sym);
 
 	cairo_select_font_face(ctx->cr, "DejaVu Sans",
-		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_move_to(ctx->cr, 60.0, 180.0);
 	cairo_show_text(ctx->cr, song);
 
 	// volume
-	cairo_move_to(ctx->cr, 32.0, 220.0);
-	cairo_select_font_face(ctx->cr, "FontAwesome",
-		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-	cairo_show_text(ctx->cr, u8"");
+	if(ctx->volume) {
+		cairo_move_to(ctx->cr, 32.0, 220.0);
+		cairo_select_font_face(ctx->cr, "FontAwesome",
+			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+		cairo_show_text(ctx->cr, u8"");
 
-	cairo_select_font_face(ctx->cr, "DejaVu Sans",
-		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-	cairo_move_to(ctx->cr, 60.0, 220.0);
+		cairo_select_font_face(ctx->cr, "DejaVu Sans",
+			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+		cairo_move_to(ctx->cr, 60.0, 220.0);
 
-	unsigned vol = volume_get(ctx->volume);
-	snprintf(buf, sizeof(buf), "%d%%", vol);
-	cairo_show_text(ctx->cr, buf);
+		if(volume_get_muted(ctx->volume)) {
+			snprintf(buf, sizeof(buf), "MUTE");
+		} else {
+			unsigned vol = volume_get(ctx->volume);
+			snprintf(buf, sizeof(buf), "%d%%", vol);
+		}
+		cairo_show_text(ctx->cr, buf);
+	}
 
 	// brightness
 	if(ctx->brightness) {
 		int brightness = get_brightness(ctx->brightness);
 		if(brightness >= 0) {
-			cairo_move_to(ctx->cr, 132.0, 220.0);
+			cairo_move_to(ctx->cr, 152.0, 220.0);
 			cairo_select_font_face(ctx->cr, "FontAwesome",
-				CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+				CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 			cairo_show_text(ctx->cr, u8"");
 
 			cairo_select_font_face(ctx->cr, "DejaVu Sans",
-				CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-			cairo_move_to(ctx->cr, 160.0, 220.0);
+				CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+			cairo_move_to(ctx->cr, 180.0, 220.0);
 			snprintf(buf, sizeof(buf), "%d%%", brightness);
+			cairo_show_text(ctx->cr, buf);
+		}
+	}
+
+	// battery
+	if(ctx->battery) {
+		struct battery_status status = battery_get(ctx->battery);
+		const char* sym;
+		if(status.charging) {
+			sym = u8"";
+		} else if(status.percent > 95) {
+			sym = u8"";
+		} else if(status.percent > 65) {
+			sym = u8"";
+		} else if(status.percent > 35) {
+			sym = u8"";
+		} else if(status.percent > 5) {
+			sym = u8"";
+		} else {
+			sym = u8"";
+		}
+
+		cairo_select_font_face(ctx->cr, "FontAwesome",
+			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+		cairo_move_to(ctx->cr, 272.0, 220.0);
+		cairo_show_text(ctx->cr, sym);
+
+		cairo_select_font_face(ctx->cr, "DejaVu Sans",
+			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+		cairo_move_to(ctx->cr, 300.0, 220.0);
+		snprintf(buf, sizeof(buf), "%d%%", status.percent);
+		cairo_show_text(ctx->cr, buf);
+
+		// wattage
+		// wattage output incorrect while charging
+		if(!status.charging) {
+			sym = u8"";
+
+			cairo_select_font_face(ctx->cr, "FontAwesome",
+				CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+			cairo_move_to(ctx->cr, 392.0, 220.0);
+			cairo_show_text(ctx->cr, sym);
+
+			cairo_select_font_face(ctx->cr, "DejaVu Sans",
+				CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+			snprintf(buf, sizeof(buf), "%.2f", status.wattage);
+			cairo_move_to(ctx->cr, 410.0, 220.0);
 			cairo_show_text(ctx->cr, buf);
 		}
 	}
@@ -457,6 +511,7 @@ int main() {
 	ctx.volume = volume_create();
 	ctx.notes = notes_create();
 	ctx.brightness = brightness_create();
+	ctx.battery = battery_create();
 
 	while(ctx.run) {
 		int ret = poll_nosig(ctx.pollfds, ctx.poll_count, -1);

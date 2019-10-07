@@ -45,4 +45,5 @@ executable('dashboard',
 	'src/notes.c',
 	'src/inotify.c',
 	'src/brightness.c',
+	'src/battery.c',
 	dependencies: deps)

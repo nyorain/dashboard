@@ -5,8 +5,9 @@
 #include <sys/inotify.h>
 #include "shared.h"
 
-static const char* path_max = "/sys/class/backlight/intel_backlight/max_brightness";
-static const char* path_current = "/sys/class/backlight/intel_backlight/actual_brightness";
+#define BASE_PATH "/sys/class/backlight/intel_backlight/"
+static const char* path_max = BASE_PATH "max_brightness";
+static const char* path_current = BASE_PATH "actual_brightness";
 
 struct brightness {
 	int wd; // inotify watcher
