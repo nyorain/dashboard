@@ -37,3 +37,4 @@ That goes beyond the dashboard functionality; rather something
 like "desktop-ui"
 
 - [ ] small window when changing volume/brightness/song
+	- [ ] also show notification when battery is getting low (10% and 5%)

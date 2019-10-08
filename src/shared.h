@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+struct modules;
+
 typedef void(*pollfd_callback)(int fd, unsigned revents, void* data);
 void add_poll_handler(int fd, unsigned events, void* data,
 		pollfd_callback callback);
@@ -12,8 +14,17 @@ typedef void(*inotify_callback)(const struct inotify_event*, void* data);
 int add_inotify_watch(const char* pathname, uint32_t mask,
 		void* data, inotify_callback callback);
 void rm_inotify_watch(int wd);
-
 void schedule_redraw(void);
+
+// dashboard
+struct display;
+
+struct display* display_create(struct modules*);
+void display_destroy(struct display*);
+
+void display_map_dashboard(struct display*);
+void display_unmap_dashboard(struct display*);
+void display_redraw_dashboard(struct display*);
 
 
 // mpd
@@ -70,3 +81,13 @@ struct battery_status {
 };
 
 struct battery_status battery_get(struct battery* battery);
+
+
+struct modules {
+	struct display* display;
+	struct mpd* mpd;
+	struct volume* volume;
+	struct notes* notes;
+	struct brightness* brightness;
+	struct battery* battery;
+};

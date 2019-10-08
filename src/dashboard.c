@@ -21,12 +21,8 @@
 
 #include "shared.h"
 
-struct poll_handler {
-	pollfd_callback callback;
-	void* data;
-};
-
-struct context {
+struct display {
+	struct modules* modules;
 	xcb_connection_t* connection;
 	xcb_screen_t* screen;
 	xcb_ewmh_connection_t ewmh;
@@ -39,24 +35,10 @@ struct context {
 
 	cairo_surface_t* surface;
 	cairo_t* cr;
-
-	unsigned poll_count;
-	struct pollfd* pollfds;
-	struct poll_handler* poll_handler;
-
-	bool run;
+	bool mapped;
 
 	unsigned width, height;
-
-	// modules
-	struct mpd* mpd;
-	struct volume* volume;
-	struct notes* notes;
-	struct brightness* brightness;
-	struct battery* battery;
 };
-
-static struct context* g_ctx;
 
 // Simple macro that checks cookies returned by xcb *_checked calls
 // useful when something triggers and xcb error
@@ -69,33 +51,7 @@ static struct context* g_ctx;
 	}}
 
 
-static int poll_nosig(struct pollfd* fds, nfds_t nfds, int timeout) {
-	while(true) {
-		int ret = poll(fds, nfds, timeout);
-		if(ret != -1 || errno != EINTR) {
-			return ret;
-		}
-	}
-}
-
-void add_poll_handler(int fd, unsigned events, void* data,
-		pollfd_callback callback) {
-	struct context* ctx = g_ctx;
-
-	unsigned c = ++ctx->poll_count;
-	ctx->poll_handler = realloc(ctx->poll_handler, c * sizeof(*ctx->poll_handler));
-	ctx->pollfds = realloc(ctx->pollfds, c * sizeof(*ctx->pollfds));
-
-	--c;
-	ctx->pollfds[c].fd = fd;
-	ctx->pollfds[c].events = events;
-	ctx->pollfds[c].revents = 0;
-
-	ctx->poll_handler[c].callback = callback;
-	ctx->poll_handler[c].data = data;
-}
-
-void draw(struct context* ctx) {
+void draw(struct display* ctx) {
 	// printf("drawing\n");
 	char buf[256];
 
@@ -129,7 +85,7 @@ void draw(struct context* ctx) {
 		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 
 	const char* sym;
-	int mpdstate = mpd_get_state(ctx->mpd);
+	int mpdstate = mpd_get_state(ctx->modules->mpd);
 	switch(mpdstate) {
 		case 1: sym = u8""; break;
 		case 2: sym = u8""; break;
@@ -137,7 +93,7 @@ void draw(struct context* ctx) {
 		default: sym = "?"; break;
 	}
 
-	const char* song = mpd_get_song(ctx->mpd);
+	const char* song = mpd_get_song(ctx->modules->mpd);
 	if(!song || mpdstate == 1) {
 		song = "-";
 	}
@@ -152,7 +108,7 @@ void draw(struct context* ctx) {
 	cairo_show_text(ctx->cr, song);
 
 	// volume
-	if(ctx->volume) {
+	if(ctx->modules->volume) {
 		cairo_move_to(ctx->cr, 32.0, 220.0);
 		cairo_select_font_face(ctx->cr, "FontAwesome",
 			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
@@ -162,18 +118,18 @@ void draw(struct context* ctx) {
 			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 		cairo_move_to(ctx->cr, 60.0, 220.0);
 
-		if(volume_get_muted(ctx->volume)) {
+		if(volume_get_muted(ctx->modules->volume)) {
 			snprintf(buf, sizeof(buf), "MUTE");
 		} else {
-			unsigned vol = volume_get(ctx->volume);
+			unsigned vol = volume_get(ctx->modules->volume);
 			snprintf(buf, sizeof(buf), "%d%%", vol);
 		}
 		cairo_show_text(ctx->cr, buf);
 	}
 
 	// brightness
-	if(ctx->brightness) {
-		int brightness = get_brightness(ctx->brightness);
+	if(ctx->modules->brightness) {
+		int brightness = get_brightness(ctx->modules->brightness);
 		if(brightness >= 0) {
 			cairo_move_to(ctx->cr, 152.0, 220.0);
 			cairo_select_font_face(ctx->cr, "FontAwesome",
@@ -189,8 +145,8 @@ void draw(struct context* ctx) {
 	}
 
 	// battery
-	if(ctx->battery) {
-		struct battery_status status = battery_get(ctx->battery);
+	if(ctx->modules->battery) {
+		struct battery_status status = battery_get(ctx->modules->battery);
 		const char* sym;
 		if(status.charging) {
 			sym = u8"";
@@ -217,7 +173,6 @@ void draw(struct context* ctx) {
 		snprintf(buf, sizeof(buf), "%d%%", status.percent);
 		cairo_show_text(ctx->cr, buf);
 
-		// wattage
 		// wattage output incorrect while charging
 		if(!status.charging) {
 			sym = u8"";
@@ -229,7 +184,7 @@ void draw(struct context* ctx) {
 
 			cairo_select_font_face(ctx->cr, "DejaVu Sans",
 				CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-			snprintf(buf, sizeof(buf), "%.2f", status.wattage);
+			snprintf(buf, sizeof(buf), "%.2f W", status.wattage);
 			cairo_move_to(ctx->cr, 410.0, 220.0);
 			cairo_show_text(ctx->cr, buf);
 		}
@@ -237,7 +192,7 @@ void draw(struct context* ctx) {
 
 	// notes
 	const char* notes[64];
-	unsigned count = notes_get(ctx->notes, notes);
+	unsigned count = notes_get(ctx->modules->notes, notes);
 	float y = 300.0;
 	for(unsigned i = 0u; i < count; ++i) {
 		// printf("node: %s (%d)\n", buf, len);
@@ -257,7 +212,7 @@ void draw(struct context* ctx) {
 }
 
 
-void process(struct context* ctx, xcb_generic_event_t* gev) {
+void process(struct display* ctx, xcb_generic_event_t* gev) {
 	switch(gev->response_type & 0x7f) {
 		case XCB_MAP_NOTIFY:
 		case XCB_EXPOSE:
@@ -273,18 +228,16 @@ void process(struct context* ctx, xcb_generic_event_t* gev) {
 		} case XCB_KEY_PRESS: {
 			xcb_key_press_event_t* ev = (xcb_key_press_event_t*) gev;
 			if((ev->detail - 8) == KEY_ESC) {
-				// printf("escape pressed, exiting\n");
-				ctx->run = false;
+				display_unmap_dashboard(ctx);
 			}
 			break;
 		} case XCB_CLIENT_MESSAGE: {
 			xcb_client_message_event_t* ev = (xcb_client_message_event_t*) gev;
 			uint32_t protocol = ev->data.data32[0];
 			if(protocol == ctx->atoms.wm_delete_window) {
-				// printf("received close event for window, exiting\n");
-				ctx->run = false;
+				display_unmap_dashboard(ctx);
 			} else if(protocol == ctx->ewmh._NET_WM_PING) {
-				// respond with poing
+				// respond with pong
 				xcb_ewmh_send_wm_ping(&ctx->ewmh,
 					ctx->screen->root, ev->data.data32[1]);
 			}
@@ -303,7 +256,7 @@ static void poll_xcb(int fd, unsigned revents, void* data) {
 	(void) data;
 	(void) fd;
 	(void) revents;
-	struct context* ctx = g_ctx;
+	struct display* ctx = (struct display*) data;
 
 	xcb_generic_event_t* gev;
 	while((gev = xcb_poll_for_event(ctx->connection))) {
@@ -313,13 +266,16 @@ static void poll_xcb(int fd, unsigned revents, void* data) {
 	}
 }
 
-bool setup(struct context* ctx) {
+struct display* display_create(struct modules* modules) {
+	struct display* ctx = calloc(1, sizeof(*ctx));
+	ctx->modules = modules;
+
 	// setup xcb connection
 	ctx->connection = xcb_connect(NULL, NULL);
 	int err;
 	if((err = xcb_connection_has_error(ctx->connection))) {
 		printf("xcb connection error: %d\n", err);
-		return false;
+		goto err;
 	}
 
 	// make sure connection is polled in main loop for events
@@ -456,79 +412,65 @@ bool setup(struct context* ctx) {
 	pid_t pid = getpid();
 	xcb_ewmh_set_wm_pid(&ctx->ewmh, ctx->window, pid);
 
-	xcb_map_window(ctx->connection, ctx->window);
-
 	// setup cairo
 	ctx->surface = cairo_xcb_surface_create(ctx->connection,
 		ctx->window, visualtype, ctx->width, ctx->height);
 	ctx->cr = cairo_create(ctx->surface);
 
-	ctx->run = true;
-	return true;
+	return ctx;
+
+err:
+	display_destroy(ctx);
+	return NULL;
 }
 
-void destroy(struct context* ctx) {
-	// modules
-	if(ctx->mpd) mpd_destroy(ctx->mpd);
-	if(ctx->volume) volume_destroy(ctx->volume);
-	if(ctx->notes) notes_destroy(ctx->notes);
-	if(ctx->brightness) brightness_destroy(ctx->brightness);
+void display_map_dashboard(struct display* ctx) {
+	if(ctx->mapped) {
+		return;
+	}
 
-	// display
-	cairo_destroy(ctx->cr);
-	cairo_surface_destroy(ctx->surface);
-
-	xcb_destroy_window(ctx->connection, ctx->window);
-	xcb_disconnect(ctx->connection);
+	xcb_map_window(ctx->connection, ctx->window);
+	xcb_flush(ctx->connection);
+	ctx->mapped = true;
 }
 
-void schedule_redraw() {
+void display_unmap_dashboard(struct display* ctx) {
+	if(!ctx->mapped) {
+		return;
+	}
+
+	xcb_unmap_window(ctx->connection, ctx->window);
+	xcb_flush(ctx->connection);
+	ctx->mapped = false;
+}
+
+void display_destroy(struct display* ctx) {
+	if(ctx->cr) cairo_destroy(ctx->cr);
+	if(ctx->surface) cairo_surface_destroy(ctx->surface);
+	if(ctx->connection) {
+		if(ctx->window) {
+			xcb_destroy_window(ctx->connection, ctx->window);
+		}
+
+		xcb_disconnect(ctx->connection);
+	}
+
+	free(ctx);
+}
+
+void display_redraw_dashboard(struct display* ctx) {
 	// NOTE: not exactly sure if xcb is threadsafe and we can use
 	// this at any time tbh... there is no XInitThreads for xcb,
 	// iirc it is always threadsafe but that should be investigated
 	xcb_expose_event_t event = {0};
-	event.window = g_ctx->window;
+	event.window = ctx->window;
 	event.response_type = XCB_EXPOSE;
 	event.x = 0;
 	event.y = 0;
-	event.width = g_ctx->width;
-	event.height = g_ctx->height;
+	event.width = ctx->width;
+	event.height = ctx->height;
 	event.count = 1;
 
-	xcb_send_event(g_ctx->connection, 0, g_ctx->window, 0, (const char*) &event);
-	xcb_flush(g_ctx->connection);
-}
-
-int main() {
-	struct context ctx = {0};
-	g_ctx = &ctx;
-
-	if(!setup(&ctx)) {
-		return 1;
-	}
-
-	ctx.mpd = mpd_create();
-	ctx.volume = volume_create();
-	ctx.notes = notes_create();
-	ctx.brightness = brightness_create();
-	ctx.battery = battery_create();
-
-	while(ctx.run) {
-		int ret = poll_nosig(ctx.pollfds, ctx.poll_count, -1);
-		if(ret == -1) {
-			printf("poll failed: %s (%d)\n", strerror(errno), errno);
-			continue; // break here?
-		}
-
-		for(unsigned i = 0u; i < ctx.poll_count; ++i) {
-			if(ctx.pollfds[i].revents) {
-				ctx.poll_handler[i].callback(ctx.pollfds[i].fd,
-					ctx.pollfds[i].revents, ctx.poll_handler[i].data);
-				ctx.pollfds[i].revents = 0;
-			}
-		}
-	}
-
-	destroy(&ctx);
-	return 0;
+	xcb_send_event(ctx->connection, 0, ctx->window, 0, (const char*) &event);
+	xcb_flush(ctx->connection);
 }
