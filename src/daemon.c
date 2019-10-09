@@ -82,8 +82,8 @@ void add_poll_handler(int fd, unsigned events, void* data,
 	ctx.poll_handler[c].data = data;
 }
 
-void schedule_redraw() {
-	display_redraw_dashboard(ctx.modules.display);
+struct display* display_get() {
+	return ctx.modules.display;
 }
 
 int main() {
@@ -117,6 +117,11 @@ int main() {
 	ctx.modules.brightness = brightness_create();
 	ctx.modules.battery = battery_create();
 	ctx.modules.display = display_create(&ctx.modules);
+
+	// critical modules
+	if(!ctx.modules.display) {
+		return EXIT_FAILURE;
+	}
 
 	while(true) {
 		int ret = poll_nosig(ctx.pollfds, ctx.poll_count, -1);

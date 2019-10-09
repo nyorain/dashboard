@@ -19,8 +19,8 @@ struct volume {
 static int elem_callback(snd_mixer_elem_t* elem, unsigned int mask){
 	(void) mask;
 	(void) elem;
-	printf("elem callback!\n");
-	schedule_redraw();
+	display_redraw_dashboard(display_get());
+	display_show_banner(display_get(), banner_volume);
 	return 0;
 }
 

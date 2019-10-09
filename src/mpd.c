@@ -57,7 +57,7 @@ static void mpd_poll(int fd, unsigned revents, void* data) {
 	if(mpd_run_noidle(mpd->connection) == MPD_IDLE_PLAYER) {
 		printf("mpd idle player\n");
 		mpd_fill(mpd);
-		schedule_redraw();
+		display_redraw_dashboard(display_get());
 	}
 
 	mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER);

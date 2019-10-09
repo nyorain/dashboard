@@ -14,16 +14,33 @@ typedef void(*inotify_callback)(const struct inotify_event*, void* data);
 int add_inotify_watch(const char* pathname, uint32_t mask,
 		void* data, inotify_callback callback);
 void rm_inotify_watch(int wd);
-void schedule_redraw(void);
+struct display* display_get(void);
 
-// dashboard
+// display
+enum banner {
+	banner_none,
+	banner_volume,
+	banner_brightness,
+	banner_battery,
+	banner_music,
+};
+
 struct display;
 
 struct display* display_create(struct modules*);
 void display_destroy(struct display*);
 
+// Activates a banner/notification of the given type.
+// Will automatically hide after some time.
+// Has no effect if the dashboard is currently mapped.
+// Will also unmap all old banners.
+void display_show_banner(struct display*, enum banner);
+
+// Maps the dashboard. Will automatically unmap the currnet banner.
 void display_map_dashboard(struct display*);
 void display_unmap_dashboard(struct display*);
+
+// Redraws the contents of the dashboard.
 void display_redraw_dashboard(struct display*);
 
 

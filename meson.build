@@ -40,7 +40,7 @@ deps = [
 
 executable('dashboard',
 	'src/daemon.c',
-	'src/dashboard.c',
+	'src/display.c',
 	'src/mpd.c',
 	'src/volume.c',
 	'src/notes.c',
