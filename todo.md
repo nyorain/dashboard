@@ -1,10 +1,5 @@
 - [x] correctly display when volume is muted
-- [ ] replace mpd control with playerctl? (or add it as alternative)
-      could show the first player we find that is currently playing.
-	  if none is playing, show mpd (note that this requires mpd-mpris)
-	  in case e.g. chromium is playing, could also show
-	  little chromium sign
-- [ ] make daemon with pipe (something like ~/.local/dashboard) that
+- [x] make daemon with pipe (something like ~/.local/dashboard) that
       allows to activate it (e.g. by just writing *anything* to it,
 	  then the window will be mapped. Escape/wm_destroy will just unmap
 	  it instead of destroying it. But make sure to reset position and size
@@ -36,5 +31,20 @@ But we monitor changes for those values anyways.
 That goes beyond the dashboard functionality; rather something
 like "desktop-ui"
 
-- [ ] small window when changing volume/brightness/song
+- [x] small window when changing volume/brightness
+	- [x] show the currently playing song when it is changed
+	      *manually*. Not sure if mpd has a signal for that though...
+		  i guess this is only possible if this application takes
+		  over controlling mpd next/prev. Do that via the command pipe
 	- [ ] also show notification when battery is getting low (10% and 5%)
+	      that one is hard/ugly. procfs for battery doesn't support
+		  inotify (which kinda makes sense). We would have to monitor
+		  the power state with a fixed interval (e.g. every 100s).
+
+later/not sure yet:
+- [ ] replace mpd control with playerctl? (or add it as alternative)
+      could show the first player we find that is currently playing.
+	  if none is playing, show mpd (note that this requires mpd-mpris)
+	  in case e.g. chromium is playing, could also show
+	  little chromium sign
+	  [probably not worth it for now]

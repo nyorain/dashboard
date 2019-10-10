@@ -84,7 +84,6 @@ struct volume* volume_create() {
 	snd_mixer_elem_set_callback(volume->elem, elem_callback);
 
 	int count = snd_mixer_poll_descriptors_count(volume->handle);
-	printf("%d volume poll fds\n", count);
 	struct pollfd* pfds = calloc(count, sizeof(*pfds));
 	assert(snd_mixer_poll_descriptors(volume->handle, pfds, count) == count);
 	for(int i = 0; i < count; ++i) {

@@ -17,6 +17,15 @@ struct mpd {
 	bool idle;
 };
 
+#define WRAP_NOIDLE(x) \
+	if(mpd->idle) { \
+		mpd_run_noidle(mpd->connection); \
+	} \
+	x \
+	if(mpd->idle) { \
+		mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER); \
+	}
+
 static bool mpd_check_error(struct mpd* mpd) {
 	enum mpd_error error = mpd_connection_get_error(mpd->connection);
 	if(error != MPD_ERROR_SUCCESS) {
@@ -49,13 +58,12 @@ static void mpd_fill(struct mpd* mpd) {
 	mpd_status_free(status);
 }
 
-static void mpd_poll(int fd, unsigned revents, void* data) {
+static void mpd_read(int fd, unsigned revents, void* data) {
 	(void) fd;
 	(void) revents;
 	struct mpd* mpd = (struct mpd*) data;
 
 	if(mpd_run_noidle(mpd->connection) == MPD_IDLE_PLAYER) {
-		printf("mpd idle player\n");
 		mpd_fill(mpd);
 		display_redraw_dashboard(display_get());
 	}
@@ -74,7 +82,7 @@ struct mpd* mpd_create() {
 
 	// add to poll list
 	add_poll_handler(mpd_connection_get_fd(mpd->connection), POLLIN,
-		mpd, mpd_poll);
+		mpd, mpd_read);
 
 	// start initial idling
 	mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER);
@@ -106,4 +114,18 @@ const char* mpd_get_song(struct mpd* mpd) {
 
 int mpd_get_state(struct mpd* mpd) {
 	return (int) mpd->state;
+}
+
+void mpd_next(struct mpd* mpd) {
+	WRAP_NOIDLE(
+		mpd_run_next(mpd->connection);
+	);
+	display_show_banner(display_get(), banner_music);
+}
+
+void mpd_prev(struct mpd* mpd) {
+	WRAP_NOIDLE(
+		mpd_run_previous(mpd->connection);
+	);
+	display_show_banner(display_get(), banner_music);
 }

@@ -44,15 +44,26 @@ static int poll_nosig(struct pollfd* fds, nfds_t nfds, int timeout) {
 	}
 }
 
-static void drain(int fd) {
-	char buf[256];
-	int ret = read(fd, buf, sizeof(buf));
-	while(ret > 0 && ret == sizeof(buf)) {
-		ret = read(fd, buf, sizeof(buf));
+// messages are simple strings
+// they are always expected to end with a newline
+static void handle_msg(char* msg, unsigned length) {
+	assert(length > 0);
+	char* newline = strchr(msg, '\n');
+	if(!newline) {
+		printf("Incomplete message: '%s'\n", msg);
+		return;
 	}
 
-	if(ret < 0) {
-		printf("read (drain) failed: %s (%d)\n", strerror(errno), errno);
+	*newline = '\0';
+	printf("Command: %s\n", msg);
+	if(strcmp(msg, "mpd next") == 0) {
+		mpd_next(ctx.modules.mpd);
+	} else if(strcmp(msg, "mpd prev") == 0) {
+		mpd_prev(ctx.modules.mpd);
+	} else if(strcmp(msg, "dashboard toggle") == 0) {
+		display_toggle_dashboard(ctx.modules.display);
+	} else {
+		printf("Unknown message: '%s'\n", msg);
 	}
 }
 
@@ -60,11 +71,24 @@ static void fifo_read(int fd, unsigned revents, void* data) {
 	(void) revents;
 	(void) data;
 
-	// we don't actually care for the content(yet), just make sure
-	// to empty the pipe. Good idea in general to do that every now
-	// and then, you know what i mean
-	drain(fd);
-	display_map_dashboard(ctx.modules.display);
+	char buf[256];
+	int ret = read(fd, buf, sizeof(buf) - 1);
+	if(ret > 0) {
+		buf[ret] = '\0';
+		handle_msg(buf, ret);
+	}
+
+	while(ret > 0 && ret == sizeof(buf) - 1) {
+		ret = read(fd, buf, sizeof(buf) - 1);
+		if(ret > 0) {
+			buf[ret] = '\0';
+			handle_msg(buf, ret);
+		}
+	}
+
+	if(ret < 0) {
+		printf("fifo read failed: %s (%d)\n", strerror(errno), errno);
+	}
 }
 
 void add_poll_handler(int fd, unsigned events, void* data,

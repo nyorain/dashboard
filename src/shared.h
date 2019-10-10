@@ -39,6 +39,7 @@ void display_show_banner(struct display*, enum banner);
 // Maps the dashboard. Will automatically unmap the currnet banner.
 void display_map_dashboard(struct display*);
 void display_unmap_dashboard(struct display*);
+void display_toggle_dashboard(struct display*);
 
 // Redraws the contents of the dashboard.
 void display_redraw_dashboard(struct display*);
@@ -57,6 +58,11 @@ const char* mpd_get_song(struct mpd*);
 // Returns the current mpd state:
 // 1: stop, 2: play, 3: pause
 int mpd_get_state(struct mpd*);
+
+// Play the next/prev song in the current list.
+// Will display a banner with the new song title.
+void mpd_next(struct mpd*);
+void mpd_prev(struct mpd*);
 
 
 // volume
@@ -83,9 +89,10 @@ void brightness_destroy(struct brightness*);
 
 // Returns the current brightness in percent.
 // A return code <0 means that the brightness couldn't be read.
-int get_brightness(struct brightness*);
+int brightness_get(struct brightness*);
 
-// look into https://github.com/aravind/libacpi
+
+// battery & power module
 struct battery;
 struct battery* battery_create(void);
 void battery_destroy(struct battery*);

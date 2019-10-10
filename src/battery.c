@@ -10,11 +10,14 @@
 #include "shared.h"
 
 // NOTE: we don't use inofity here since it wouldn't make a lot of
-// sense, battery status is pretty much continously changing
+// sense, battery status is pretty much continously changing.
+// EDIT: it would make sense actually to allow sending notifications.
+// But it's not supported in sysfs which kinda makes sense.
 
 #define BASE_PATH "/sys/class/power_supply/"
 
 struct battery {
+	// TODO: not used
 	const char* battery_path;
 	const char* ac_path;
 };

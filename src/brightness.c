@@ -42,7 +42,6 @@ static void callback(const struct inotify_event* ev, void* data) {
 	(void) ev;
 	struct brightness* brightness = (struct brightness*) data;
 	brightness->percent = read_percent();
-	printf("callback: %d\n", brightness->percent);
 	display_redraw_dashboard(display_get());
 	display_show_banner(display_get(), banner_brightness);
 }
@@ -65,6 +64,6 @@ void brightness_destroy(struct brightness* brightness) {
 	free(brightness);
 }
 
-int get_brightness(struct brightness* b) {
+int brightness_get(struct brightness* b) {
 	return b->percent;
 }

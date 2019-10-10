@@ -30,6 +30,13 @@ struct display {
 	xcb_colormap_t colormap;
 	xcb_window_t window;
 
+	// whether window is using override redirect
+	// to make keyboard input work on override redirect windows
+	// we probably want to grab the keyboard.
+	// But that seems fine for displaying the dashboard.
+	// Notifications/banners don't need keyboard input
+	bool override_redirect;
+
 	struct {
 		xcb_atom_t wm_delete_window;
 	} atoms;
@@ -46,8 +53,8 @@ struct display {
 
 static const unsigned start_width = 800;
 static const unsigned start_height = 500;
-static const unsigned banner_width = 300;
-static const unsigned banner_height = 80;
+static const unsigned banner_width = 400;
+static const unsigned banner_height = 60;
 static const unsigned banner_margin_x = 20;
 static const unsigned banner_margin_y = 20;
 static const unsigned banner_time = 2; // in seconds
@@ -61,6 +68,41 @@ static const unsigned banner_time = 2; // in seconds
 		printf("[%s:%d] xcb error code: %d\n", __FILE__, __LINE__, gerr->error_code); \
 		free(gerr); \
 	}}
+
+static void configure_window(struct display* ctx, int x, int y,
+		unsigned width, unsigned height, bool focus) {
+	if(ctx->override_redirect) {
+		int32_t values[] = {x, y, width, height};
+		uint32_t mask =
+			XCB_CONFIG_WINDOW_X |
+			XCB_CONFIG_WINDOW_Y |
+			XCB_CONFIG_WINDOW_WIDTH |
+			XCB_CONFIG_WINDOW_HEIGHT;
+		xcb_configure_window(ctx->connection, ctx->window, mask, values);
+
+		// if(focus) {
+		// 	xcb_set_input_focus(ctx->connection, XCB_NONE, ctx->window,
+		// 		XCB_CURRENT_TIME);
+		// }
+	} else {
+		xcb_icccm_wm_hints_t wmhints;
+		xcb_icccm_wm_hints_set_input(&wmhints, focus);
+		xcb_icccm_set_wm_hints(ctx->connection, ctx->window, &wmhints);
+
+		xcb_size_hints_t shints;
+		xcb_icccm_size_hints_set_position(&shints, 0, x, y);
+		xcb_icccm_size_hints_set_size(&shints, 0, width, height);
+		xcb_icccm_set_wm_size_hints(ctx->connection, ctx->window,
+			XCB_ATOM_WM_NORMAL_HINTS, &shints);
+
+		xcb_atom_t states[] = {
+			ctx->ewmh._NET_WM_STATE_ABOVE,
+			ctx->ewmh._NET_WM_STATE_STICKY,
+		};
+		xcb_ewmh_set_wm_state(&ctx->ewmh, ctx->window,
+			sizeof(states) / sizeof(states[0]), states);
+	}
+}
 
 static const char* mpd_state_symbol(int mpd_state) {
 	switch(mpd_state) {
@@ -89,7 +131,7 @@ static const char* battery_symbol(struct battery_status status) {
 
 static const char* banner_symbol(struct display* ctx) {
 	switch(ctx->banner) {
-		case banner_volume: return "";
+		case banner_volume: return volume_get_muted(ctx->modules->volume) ? "" : "";
 		case banner_brightness: return "";
 		case banner_battery: return battery_symbol(battery_get(ctx->modules->battery));
 		case banner_music: return mpd_state_symbol(mpd_get_state(ctx->modules->mpd));
@@ -106,12 +148,37 @@ static void draw_banner(struct display* ctx) {
 	const char* sym = banner_symbol(ctx);
 	cairo_select_font_face(ctx->cr, "FontAwesome",
 		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-	cairo_set_font_size(ctx->cr, 40.0);
+	cairo_set_font_size(ctx->cr, 30.0);
 	cairo_set_source_rgb(ctx->cr, 0.9, 0.9, 0.9);
-	cairo_move_to(ctx->cr, 20.0, 55.0);
+	cairo_move_to(ctx->cr, 20.0, 40.0);
 	cairo_show_text(ctx->cr, sym);
 
-	// TODO: render information
+	if(ctx->banner == banner_volume || ctx->banner == banner_brightness) {
+		unsigned percent = 0;
+		if(ctx->banner == banner_volume) {
+			percent = (int)(!volume_get_muted(ctx->modules->volume)) *
+				volume_get(ctx->modules->volume);
+		} else if(ctx->banner == banner_brightness) {
+			percent = brightness_get(ctx->modules->brightness);
+		}
+
+		float fp = 0.01 * percent;
+		cairo_move_to(ctx->cr, 70, banner_height / 2);
+		cairo_line_to(ctx->cr, 70 + fp * (banner_width - 100), banner_height / 2);
+		cairo_set_source_rgba(ctx->cr, 1, 1, 1, 1);
+		cairo_stroke(ctx->cr);
+	} else if(ctx->banner == banner_music) {
+		const char* song = mpd_get_song(ctx->modules->mpd);
+		if(!song || mpd_get_state(ctx->modules->mpd) == 1) {
+			song = "-";
+		}
+
+		cairo_set_font_size(ctx->cr, 18.0);
+		cairo_move_to(ctx->cr, 70, 35);
+		cairo_select_font_face(ctx->cr, "DejaVu Sans",
+			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+		cairo_show_text(ctx->cr, song);
+	}
 
 	// finish
 	cairo_surface_flush(ctx->surface);
@@ -188,27 +255,30 @@ static void draw_dashboard(struct display* ctx) {
 
 	// volume
 	if(ctx->modules->volume) {
+		if(volume_get_muted(ctx->modules->volume)) {
+			snprintf(buf, sizeof(buf), "MUTE");
+			sym = u8"";
+		} else {
+			unsigned vol = volume_get(ctx->modules->volume);
+			snprintf(buf, sizeof(buf), "%d%%", vol);
+			sym = u8"";
+		}
+
 		cairo_move_to(ctx->cr, 32.0, 220.0);
 		cairo_select_font_face(ctx->cr, "FontAwesome",
 			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-		cairo_show_text(ctx->cr, u8"");
+		cairo_show_text(ctx->cr, sym);
 
 		cairo_select_font_face(ctx->cr, "DejaVu Sans",
 			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 		cairo_move_to(ctx->cr, 60.0, 220.0);
 
-		if(volume_get_muted(ctx->modules->volume)) {
-			snprintf(buf, sizeof(buf), "MUTE");
-		} else {
-			unsigned vol = volume_get(ctx->modules->volume);
-			snprintf(buf, sizeof(buf), "%d%%", vol);
-		}
 		cairo_show_text(ctx->cr, buf);
 	}
 
 	// brightness
 	if(ctx->modules->brightness) {
-		int brightness = get_brightness(ctx->modules->brightness);
+		int brightness = brightness_get(ctx->modules->brightness);
 		if(brightness >= 0) {
 			cairo_move_to(ctx->cr, 152.0, 220.0);
 			cairo_select_font_face(ctx->cr, "FontAwesome",
@@ -290,9 +360,9 @@ void process(struct display* ctx, xcb_generic_event_t* gev) {
 		case XCB_CONFIGURE_NOTIFY: {
 			xcb_configure_notify_event_t* ev = (xcb_configure_notify_event_t*) gev;
 			cairo_xcb_surface_set_size(ctx->surface, ev->width, ev->height);
-			printf("resizing to %d %d\n", ev->width, ev->height);
 			ctx->width = ev->width;
 			ctx->height = ev->height;
+			// printf("resize: %d %d\n", ctx->width, ctx->height);
 			break;
 		} case XCB_KEY_PRESS: {
 			xcb_key_press_event_t* ev = (xcb_key_press_event_t*) gev;
@@ -329,7 +399,6 @@ static void read_xcb(int fd, unsigned revents, void* data) {
 
 	xcb_generic_event_t* gev;
 	while((gev = xcb_poll_for_event(ctx->connection))) {
-		printf("poll xcb\n");
 		process(ctx, gev);
 		free(gev);
 	}
@@ -352,6 +421,7 @@ static void read_timer(int fd, unsigned revents, void* data) {
 struct display* display_create(struct modules* modules) {
 	struct display* ctx = calloc(1, sizeof(*ctx));
 	ctx->modules = modules;
+	ctx->override_redirect = true;
 
 	// setup xcb connection
 	ctx->connection = xcb_connect(NULL, NULL);
@@ -437,18 +507,17 @@ struct display* display_create(struct modules* modules) {
 		assert(visualtype && "Screen root visual not found");
 	}
 
-	printf("visual: %#010x %#010x %#010x, rgb-bits %d\n",
-		visualtype->red_mask,
-		visualtype->green_mask,
-		visualtype->blue_mask,
-		visualtype->bits_per_rgb_value);
+	// printf("visual: %#010x %#010x %#010x, rgb-bits %d\n",
+	// 	visualtype->red_mask,
+	// 	visualtype->green_mask,
+	// 	visualtype->blue_mask,
+	// 	visualtype->bits_per_rgb_value);
 
 	// setup xcb window
 	ctx->width = start_width;
 	ctx->height = start_height;
 
 	uint32_t mask;
-  	uint32_t values[3];
 
 	// colormap: it seems like we have to create a colormap for transparent
 	// windows, otherwise they won't display correctly.
@@ -459,12 +528,16 @@ struct display* display_create(struct modules* modules) {
 	// have to specify border pixel (with colormap), otherwise we get bad match
 	// not exactly sure why; x11... there may have been a valid reason
 	// for this like 30 years ago
-	mask = XCB_CW_BORDER_PIXEL | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP;
+	mask = XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT |
+		XCB_CW_EVENT_MASK | XCB_CW_COLORMAP;
+
+  	uint32_t values[4];
 	values[0] = 0;
-	values[1] = XCB_EVENT_MASK_EXPOSURE |
+	values[1] = ctx->override_redirect;
+	values[2] = XCB_EVENT_MASK_EXPOSURE |
 		XCB_EVENT_MASK_KEY_PRESS |
 		XCB_EVENT_MASK_STRUCTURE_NOTIFY;
-	values[2] = ctx->colormap;
+	values[3] = ctx->colormap;
 
 	ctx->window = xcb_generate_id(ctx->connection);
 	XCB_CHECK(xcb_create_window_checked(ctx->connection, vdepth, ctx->window,
@@ -473,12 +546,16 @@ struct display* display_create(struct modules* modules) {
 
 	// window properties
 	// window type is dialog: floating, over other windows
-	xcb_ewmh_set_wm_window_type(&ctx->ewmh, ctx->window, 1,
-		&ctx->ewmh._NET_WM_WINDOW_TYPE_DIALOG);
+	xcb_atom_t types[] = {ctx->ewmh._NET_WM_WINDOW_TYPE_DIALOG};
+	xcb_ewmh_set_wm_window_type(&ctx->ewmh, ctx->window,
+		sizeof(types) / sizeof(types[0]), types);
 
-	// title
-	const char* title = "dashboard";
-	xcb_ewmh_set_wm_name(&ctx->ewmh, ctx->window, strlen(title), title);
+	xcb_atom_t states[] = {
+		ctx->ewmh._NET_WM_STATE_ABOVE,
+		ctx->ewmh._NET_WM_STATE_STICKY,
+	};
+	xcb_ewmh_set_wm_state(&ctx->ewmh, ctx->window,
+		sizeof(states) / sizeof(states[0]), states);
 
 	// supported protocols
 	// allows to detect when program hangs and kill it
@@ -529,21 +606,20 @@ void display_map_dashboard(struct display* ctx) {
 		xcb_unmap_window(ctx->connection, ctx->window);
 	}
 
-	xcb_icccm_wm_hints_t wmhints;
-	xcb_icccm_wm_hints_set_input(&wmhints, 1);
-	xcb_icccm_set_wm_hints(ctx->connection, ctx->window, &wmhints);
+	// title
+	const char* title = "dashboard";
+	xcb_ewmh_set_wm_name(&ctx->ewmh, ctx->window, strlen(title), title);
+	xcb_map_window(ctx->connection, ctx->window);
 
 	// TODO: don't hardcode center of screen to 1920x1080 res
 	// instead use xcb_get_geometry (once, during initialization)
-	xcb_size_hints_t shints;
-	xcb_icccm_size_hints_set_position(&shints, 0,
+	configure_window(ctx,
 		(1920 - start_width) / 2,
-		(1080 - start_height) / 2);
-	xcb_icccm_size_hints_set_size(&shints, 0, start_width, start_height);
-	xcb_icccm_set_wm_size_hints(ctx->connection, ctx->window,
-		XCB_ATOM_WM_NORMAL_HINTS, &shints);
+		(1080 - start_height) / 2,
+		start_width, start_height, true);
+	ctx->width = start_width;
+	ctx->height = start_height;
 
-	xcb_map_window(ctx->connection, ctx->window);
 	xcb_flush(ctx->connection);
 	ctx->dashboard = true;
 }
@@ -558,6 +634,14 @@ void display_unmap_dashboard(struct display* ctx) {
 	ctx->dashboard = false;
 }
 
+void display_toggle_dashboard(struct display* ctx) {
+	if(ctx->dashboard) {
+		display_unmap_dashboard(ctx);
+	} else {
+		display_map_dashboard(ctx);
+	}
+}
+
 void display_show_banner(struct display* ctx, enum banner banner) {
 	// don't show any banners while the dashboard is active
 	if(ctx->dashboard) {
@@ -565,21 +649,14 @@ void display_show_banner(struct display* ctx, enum banner banner) {
 	}
 
 	if(ctx->banner == banner_none) {
-		xcb_icccm_wm_hints_t wmhints;
-		xcb_icccm_wm_hints_set_input(&wmhints, 0);
-		xcb_icccm_set_wm_hints(ctx->connection, ctx->window, &wmhints);
-
-		// TODO: don't hardcode center of screen to 1920x1080 res
-		// instead use xcb_get_geometry (once, during initialization)
-		xcb_size_hints_t shints;
-		xcb_icccm_size_hints_set_position(&shints, 0,
-			1920 - banner_width - banner_margin_x,
-			1080 - banner_height - banner_margin_y);
-		xcb_icccm_size_hints_set_size(&shints, 0, banner_width, banner_height);
-		xcb_icccm_set_wm_size_hints(ctx->connection, ctx->window,
-			XCB_ATOM_WM_NORMAL_HINTS, &shints);
-
+		// title
+		const char* title = "notification";
+		xcb_ewmh_set_wm_name(&ctx->ewmh, ctx->window, strlen(title), title);
 		xcb_map_window(ctx->connection, ctx->window);
+		configure_window(ctx,
+			1920 - banner_width - banner_margin_x,
+			1080 - banner_height - banner_margin_y,
+			banner_width, banner_height, false);
 		xcb_flush(ctx->connection);
 	} else {
 		send_expose_event(ctx);
@@ -588,6 +665,7 @@ void display_show_banner(struct display* ctx, enum banner banner) {
 	ctx->banner = banner;
 
 	// set timeout on timerfd to hide the banner
+	// this will automatically override previously queued timers
 	struct itimerspec timer_unused, timer = {0};
 	timer.it_value.tv_sec = banner_time;
 	timerfd_settime(ctx->timer, 0, &timer, &timer_unused);
