@@ -64,6 +64,9 @@ int mpd_get_state(struct mpd*);
 void mpd_next(struct mpd*);
 void mpd_prev(struct mpd*);
 
+// Toggles whether mpd is playing. Will display a banner.
+void mpd_toggle(struct mpd*);
+
 
 // volume
 struct volume;

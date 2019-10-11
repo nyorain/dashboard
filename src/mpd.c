@@ -119,6 +119,7 @@ int mpd_get_state(struct mpd* mpd) {
 void mpd_next(struct mpd* mpd) {
 	WRAP_NOIDLE(
 		mpd_run_next(mpd->connection);
+		mpd_fill(mpd);
 	);
 	display_show_banner(display_get(), banner_music);
 }
@@ -126,6 +127,15 @@ void mpd_next(struct mpd* mpd) {
 void mpd_prev(struct mpd* mpd) {
 	WRAP_NOIDLE(
 		mpd_run_previous(mpd->connection);
+		mpd_fill(mpd);
+	);
+	display_show_banner(display_get(), banner_music);
+}
+
+void mpd_toggle(struct mpd* mpd) {
+	WRAP_NOIDLE(
+		mpd_run_toggle_pause(mpd->connection);
+		mpd_fill(mpd);
 	);
 	display_show_banner(display_get(), banner_music);
 }

@@ -60,6 +60,8 @@ static void handle_msg(char* msg, unsigned length) {
 		mpd_next(ctx.modules.mpd);
 	} else if(strcmp(msg, "mpd prev") == 0) {
 		mpd_prev(ctx.modules.mpd);
+	} else if(strcmp(msg, "mpd toggle") == 0) {
+		mpd_toggle(ctx.modules.mpd);
 	} else if(strcmp(msg, "dashboard toggle") == 0) {
 		display_toggle_dashboard(ctx.modules.display);
 	} else {
