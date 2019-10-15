@@ -51,13 +51,17 @@ struct display {
 	int timer;
 };
 
+// size of the dashboard
 static const unsigned start_width = 800;
 static const unsigned start_height = 500;
+// size of the banner
 static const unsigned banner_width = 400;
 static const unsigned banner_height = 60;
+// margin of the banner on screen
 static const unsigned banner_margin_x = 20;
 static const unsigned banner_margin_y = 20;
-static const unsigned banner_time = 2; // in seconds
+// how long the banner will stay visible, in seconds
+static const unsigned banner_time = 2;
 
 // Simple macro that checks cookies returned by xcb *_checked calls
 // useful when something triggers and xcb error
@@ -173,11 +177,72 @@ static void draw_banner(struct display* ctx) {
 			song = "-";
 		}
 
+		float x = 70;
 		cairo_set_font_size(ctx->cr, 18.0);
-		cairo_move_to(ctx->cr, 70, 35);
+		cairo_move_to(ctx->cr, x, 35);
 		cairo_select_font_face(ctx->cr, "DejaVu Sans",
 			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-		cairo_show_text(ctx->cr, song);
+
+		cairo_text_extents_t extents;
+		const char* it = song;
+		unsigned count = 0;
+
+		// Trim the song string so that it will fit into the banner.
+		// If it's too long, end it with '...'. Respect utf-8 encoding
+		// (mpd is guaranteed to give us utf-8 output)
+		// NOTE: this kind of copy-check-extents-for-utf8 logic is probably
+		// useful in more than one place.
+		// hacked together, should probably be tested first.
+		// is allowed to (and will!) crash when the input string isn't
+		// valid utf8
+
+		char buf[256]; // buffer to copy the resulting string into
+		// pointers to the last three characters in buf
+		// we keep track of them so we can replace make the last three
+		// chars of the string '...' (and a null terminator)
+		char* last[3] = {NULL, NULL, NULL};
+		while(*it != '\0') {
+			unsigned len = utf8_length(it); // how many bytes does this char have?
+			if(count + len + 1 >= sizeof(buf)) {
+				printf("Error: utf8-copy-check-extents buffer too short\n");
+				if(last[2] != NULL) {
+					*last[2]++ = '.';
+					*last[2]++ = '.';
+					*last[2]++ = '.';
+					*last[2]++ = '\0';
+				}
+				break;
+			}
+
+			last[2] = last[1];
+			last[1] = last[0];
+			last[0] = &buf[count];
+			for(unsigned i = 0u; i < len && *it != '\0'; ++i) {
+				buf[count++] = *it++;
+			}
+
+			// always null-terminate the current buffer
+			// in case this is the last iterations (and we stay within the
+			// bounds we have), we can just use buf below.
+			// But it also allows us to pass last[0] (i.e. the start
+			// of the current char) to cairo since cairo needs the
+			// null-terminator
+			buf[count] = '\0';
+			cairo_text_extents(ctx->cr, last[0], &extents);
+			x += extents.x_advance;
+			if(x > banner_width - 20) {
+				if(last[2] != NULL) {
+					*last[2]++ = '.';
+					*last[2]++ = '.';
+					*last[2]++ = '.';
+					*last[2]++ = '\0';
+				}
+
+				break;
+			}
+		}
+
+		cairo_show_text(ctx->cr, buf);
 	}
 
 	// finish

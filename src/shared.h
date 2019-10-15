@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdlib.h>
 #include <stdint.h>
 
 struct modules;
@@ -15,6 +16,15 @@ int add_inotify_watch(const char* pathname, uint32_t mask,
 		void* data, inotify_callback callback);
 void rm_inotify_watch(int wd);
 struct display* display_get(void);
+
+// Like bsd's strlcpy (safer alternative to strncpy) but copies
+// a number of utf8 characters. Note that this means that dst
+// has to be at least maxncpy * 4 (or times 6 for weird chars) long.
+char* utf8_strlcpy(char* dst, const char* src, size_t maxncpy);
+
+// Returns the length of the utf-8 encoded character in bytes.
+unsigned utf8_length(const char* src);
+
 
 // display
 enum banner {

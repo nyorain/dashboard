@@ -14,7 +14,6 @@
 		  [probably not worth it, who needs the mouse anyways?]
 	- [ ] get more design inspiration on /r/unixporn
 	      pretty sure there are some dashboard-like setups already
-- [ ] add additional keyboard shortcuts?
 - [ ] first-class native wayland support via layer shell
 	- [ ] factor display code out into seperate file
 - [ ] allow to remove note items from the dashboard (e.g. tab + enter
@@ -24,6 +23,11 @@
 		  it for quite a while
 		  But when implemented, just add support for general node adding,
 		  not only [db] nodes. That could be quite useful...
+- [ ] add additional keyboard shortcuts?
+- [x] mpd notification: if the text doesn't fit into the
+      notification window, use "..."
+	- [ ] better mpd notification layout? with the title displaying
+	      in a larger font and the artist in a second line?
 
 Not sure if useful for this project or seperate project:
 there probably already is something for this i guess.
@@ -39,7 +43,9 @@ like "desktop-ui"
 	- [ ] also show notification when battery is getting low (10% and 5%)
 	      that one is hard/ugly. procfs for battery doesn't support
 		  inotify (which kinda makes sense). We would have to monitor
-		  the power state with a fixed interval (e.g. every 100s).
+		  the power state with a fixed interval (e.g. every 100s)
+		  for a simple inequality check (like < 10%) this should
+		  be good enough
 
 later/not sure yet:
 - [ ] replace mpd control with playerctl? (or add it as alternative)

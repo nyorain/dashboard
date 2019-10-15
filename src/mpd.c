@@ -50,7 +50,12 @@ static void mpd_fill(struct mpd* mpd) {
 
 	const char* artist = mpd_song_get_tag(song, MPD_TAG_ARTIST, 0);
 	const char* title = mpd_song_get_tag(song, MPD_TAG_TITLE, 0);
-	assert(artist && title);
+	if(!artist) {
+		artist = "<unknown>";
+	}
+	if(!title) {
+		title = "<unknown>";
+	}
 	snprintf(mpd->songbuf, sizeof(mpd->songbuf), "%s - %s", artist, title);
 
 	struct mpd_status* status = mpd_run_status(mpd->connection);
