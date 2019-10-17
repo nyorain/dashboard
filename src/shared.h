@@ -4,7 +4,22 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+typedef struct _cairo_surface cairo_surface_t;
+typedef struct _cairo cairo_t;
+
 struct modules;
+
+enum banner {
+	banner_none,
+	banner_volume,
+	banner_brightness,
+	banner_battery,
+	banner_music,
+};
+
+// size of the banner
+static const unsigned banner_width = 400;
+static const unsigned banner_height = 60;
 
 typedef void(*pollfd_callback)(int fd, unsigned revents, void* data);
 void add_poll_handler(int fd, unsigned events, void* data,
@@ -26,18 +41,27 @@ char* utf8_strlcpy(char* dst, const char* src, size_t maxncpy);
 unsigned utf8_length(const char* src);
 
 
+// draw
+void draw_dashboard(cairo_surface_t*, cairo_t*, struct modules*);
+void draw_banner(cairo_surface_t*, cairo_t*, struct modules*, enum banner);
+
+
 // display
-enum banner {
-	banner_none,
-	banner_volume,
-	banner_brightness,
-	banner_battery,
-	banner_music,
+struct display;
+struct display_impl {
+	void (*destroy)(struct display*);
+	void (*toggle_dashboard)(struct display*);
+	void (*redraw_dashboard)(struct display*);
+	void (*show_banner)(struct display*, enum banner);
 };
 
-struct display;
+struct display {
+	const struct display_impl* impl;
+};
 
-struct display* display_create(struct modules*);
+// These functions returns NULL in case the backend isn't available.
+struct display* display_create_wl(struct modules*);
+struct display* display_create_x11(struct modules*);
 void display_destroy(struct display*);
 
 // Activates a banner/notification of the given type.
@@ -47,8 +71,6 @@ void display_destroy(struct display*);
 void display_show_banner(struct display*, enum banner);
 
 // Maps the dashboard. Will automatically unmap the currnet banner.
-void display_map_dashboard(struct display*);
-void display_unmap_dashboard(struct display*);
 void display_toggle_dashboard(struct display*);
 
 // Redraws the contents of the dashboard.

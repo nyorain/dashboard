@@ -16,6 +16,8 @@
 	      pretty sure there are some dashboard-like setups already
 - [ ] first-class native wayland support via layer shell
 	- [ ] factor display code out into seperate file
+	- [ ] we can probably re-use some utility from swaybg (pool-buffer)
+	- [ ] later: include output management
 - [ ] allow to remove note items from the dashboard (e.g. tab + enter
       or vim j/k or c-n/c-p bindings + enter i guess)
 	- [ ] add some way to add notes? [later, not important atm]
@@ -28,6 +30,10 @@
       notification window, use "..."
 	- [ ] better mpd notification layout? with the title displaying
 	      in a larger font and the artist in a second line?
+- [ ] make modules compile-time options.
+      shouldn't require to have sqlite/alsa/mpd installed
+- [ ] go all the way with renaming dashboard ->
+      dui (desktop/dashboard ui/utility information; some mashup of those)
 
 Not sure if useful for this project or seperate project:
 there probably already is something for this i guess.

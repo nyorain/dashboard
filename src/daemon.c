@@ -142,7 +142,7 @@ int main() {
 	ctx.modules.notes = notes_create();
 	ctx.modules.brightness = brightness_create();
 	ctx.modules.battery = battery_create();
-	ctx.modules.display = display_create(&ctx.modules);
+	ctx.modules.display = display_create_x11(&ctx.modules);
 
 	// critical modules
 	if(!ctx.modules.display) {
