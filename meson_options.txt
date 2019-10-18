@@ -1,2 +1,4 @@
 option('with-x11', type: 'feature', value: 'auto', description: 'support for x11 backend')
 option('with-wayland', type: 'feature', value: 'disabled', description: 'support for wayland backend')
+
+option('with-playerctl', type: 'feature', value: 'auto', description: 'support for playerctl module')

@@ -30,12 +30,13 @@ dep_m = cc.find_library('m', required: false)
 dep_mpdclient = dependency('libmpdclient')
 dep_alsa = dependency('alsa')
 dep_sqlite3 = dependency('sqlite3')
+dep_playerctl = dependency('playerctl', required: get_option('with-playerctl'))
 
 dui_src = files(
 	'src/battery.c',
 	'src/brightness.c',
 	'src/display.c',
-	'src/draw.c',
+	'src/ui.c',
 	'src/daemon.c',
 	'src/inotify.c',
 	'src/mpd.c',
@@ -43,6 +44,10 @@ dui_src = files(
 	'src/utf8.c',
 	'src/volume.c',
 )
+
+if dep_playerctl.found()
+	dui_src += files('src/playerctl.c')
+endif
 
 dui_deps = [
 	dep_cairo,
@@ -52,12 +57,24 @@ dui_deps = [
 	dep_mpdclient,
 	dep_alsa,
 	dep_sqlite3,
+	dep_playerctl,
 ]
 
-dui_inc = include_directories('src')
+
+conf_data = configuration_data()
+conf_data.set10('WITH_PLAYERCTL', dep_playerctl.found())
 
 subdir('src/x11')
 subdir('src/wl')
+
+dui_inc = [
+	include_directories('.'),
+	include_directories('src'),
+]
+
+configure_file(output: 'config.h',
+	configuration: conf_data
+)
 
 executable('dashboard',
 	dui_src,

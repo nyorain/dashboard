@@ -20,6 +20,9 @@ enum banner {
 // size of the banner
 static const unsigned banner_width = 400;
 static const unsigned banner_height = 60;
+// size of the dashboard
+static const unsigned start_width = 800;
+static const unsigned start_height = 500;
 
 typedef void(*pollfd_callback)(int fd, unsigned revents, void* data);
 void add_poll_handler(int fd, unsigned events, void* data,
@@ -42,9 +45,14 @@ unsigned utf8_length(const char* src);
 
 
 // draw
-void draw_dashboard(cairo_surface_t*, cairo_t*, struct modules*);
-void draw_banner(cairo_surface_t*, cairo_t*, struct modules*, enum banner);
+struct ui;
 
+struct ui* ui_create(struct modules*);
+void ui_destroy(struct ui*);
+
+void ui_draw_dashboard(struct ui*, cairo_surface_t*, cairo_t*);
+void ui_draw_banner(struct ui*, cairo_surface_t*, cairo_t*, enum banner);
+void ui_key(struct ui*, unsigned); // linux key codes
 
 // display
 struct display;
@@ -60,8 +68,8 @@ struct display {
 };
 
 // These functions returns NULL in case the backend isn't available.
-struct display* display_create_wl(struct modules*);
-struct display* display_create_x11(struct modules*);
+struct display* display_create_wl(struct ui*);
+struct display* display_create_x11(struct ui*);
 void display_destroy(struct display*);
 
 // Activates a banner/notification of the given type.
@@ -114,7 +122,7 @@ struct notes;
 
 struct notes* notes_create(void);
 void notes_destroy(struct notes*);
-unsigned notes_get(struct notes*, const char*[static 64]);
+const char** notes_get(struct notes*, unsigned* count);
 
 // brightness
 struct brightness;
@@ -142,11 +150,32 @@ struct battery_status {
 struct battery_status battery_get(struct battery* battery);
 
 
+// playerctl
+struct playerctl;
+struct playerctl* playerctl_create(void);
+void playerctl_destroy(struct playerctl*);
+
+// Returns an 'artist - title' description of the current song.
+// Returns NULL if there is no current song (player is in stopped state).
+const char* playerctl_get_song(struct playerctl*);
+
+// Returns the current player state:
+// 1: stop, 2: play, 3: pause
+int playerctl_get_state(struct playerctl*);
+
+// Play the next/prev song in the current list.
+// Will display a banner with the new song title.
+void playerctl_next(struct playerctl*);
+void playerctl_prev(struct playerctl*);
+
+// Toggles whether player is playing. Will display a banner.
+void playerctl_toggle(struct playerctl*);
+
 struct modules {
-	struct display* display;
 	struct mpd* mpd;
 	struct volume* volume;
 	struct notes* notes;
 	struct brightness* brightness;
 	struct battery* battery;
+	struct playerctl* playerctl;
 };

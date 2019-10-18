@@ -12,11 +12,14 @@
 
 struct mpd {
 	struct mpd_connection* connection;
-	char songbuf[64]; // "artist - title"
+	char songbuf[256]; // "artist - title"
 	enum mpd_state state;
 	bool idle;
 };
 
+// Simple macro that wraps the code 'x' so that we previously
+// cancel the idle state (if there is one) and afterwards
+// resume it.
 #define WRAP_NOIDLE(x) \
 	if(mpd->idle) { \
 		mpd_run_noidle(mpd->connection); \

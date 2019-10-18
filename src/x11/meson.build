@@ -10,4 +10,14 @@ dui_deps += [
 	dep_xcb_icccm,
 ]
 
-dui_src += files('display.c')
+found_x11 = true
+foreach dep : dui_deps
+	if not dep.found()
+		found_x11 = false
+	endif
+endforeach
+
+conf_data.set10('HAVE_X11', found_x11)
+if found_x11
+	dui_src += files('display.c')
+endif

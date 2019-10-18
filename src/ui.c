@@ -11,8 +11,14 @@
 #include <cairo/cairo.h>
 #include "shared.h"
 
-static const char* mpd_state_symbol(int mpd_state) {
-	switch(mpd_state) {
+struct ui {
+	struct modules* modules;
+};
+
+static const bool use_mpd = false;
+
+static const char* music_state_symbol(int state) {
+	switch(state) {
 		case 1: return u8"";
 		case 2: return u8"";
 		case 3: return u8"";
@@ -41,13 +47,15 @@ static const char* banner_symbol(enum banner banner, struct modules* modules) {
 		case banner_volume: return volume_get_muted(modules->volume) ? "" : "";
 		case banner_brightness: return "";
 		case banner_battery: return battery_symbol(battery_get(modules->battery));
-		case banner_music: return mpd_state_symbol(mpd_get_state(modules->mpd));
+		case banner_music: return use_mpd ?
+			music_state_symbol(mpd_get_state(modules->mpd)) :
+			music_state_symbol(playerctl_get_state(modules->playerctl));
 		default: return "?";
 	}
 }
 
-void draw_dashboard(cairo_surface_t* surface, cairo_t* cr, struct modules* modules) {
-	// printf("drawing\n");
+void ui_draw_dashboard(struct ui* ui, cairo_surface_t* surface, cairo_t* cr) {
+	struct modules* modules = ui->modules;
 	char buf[256];
 
 	// background
@@ -63,16 +71,22 @@ void draw_dashboard(cairo_surface_t* surface, cairo_t* cr, struct modules* modul
 	strftime(buf, sizeof(buf), "%H:%M", &tm_info);
 	cairo_select_font_face(cr, "DejaVu Sans",
 		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-	cairo_set_font_size(cr, 50.0);
+	cairo_set_font_size(cr, 60.0);
 	cairo_set_source_rgb(cr, 0.9, 0.9, 0.9);
-	cairo_move_to(cr, 32.0, 70.0);
+	cairo_move_to(cr, 32.0, 80.0);
 	cairo_show_text(cr, buf);
 
-	strftime(buf, sizeof(buf), "%d.%m.%y", &tm_info);
-	cairo_set_font_size(cr, 20.0);
+	strftime(buf, sizeof(buf), "%A, %d. %B %y", &tm_info);
+	cairo_set_font_size(cr, 16.0);
 	cairo_set_source_rgba(cr, 0.8, 0.8, 0.8, 0.8);
-	cairo_move_to(cr, 32.0, 100.0);
+	cairo_move_to(cr, 32.0, 105.0);
 	cairo_show_text(cr, buf);
+
+	// small line
+	cairo_move_to(cr, 220, 140);
+	cairo_line_to(cr, start_width - 220, 140);
+	cairo_set_line_width(cr, 0.2);
+	cairo_stroke(cr);
 
 	// music
 	cairo_set_font_size(cr, 18.0);
@@ -80,11 +94,19 @@ void draw_dashboard(cairo_surface_t* surface, cairo_t* cr, struct modules* modul
 		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 
 	const char* sym;
-	int mpdstate = mpd_get_state(modules->mpd);
-	sym = mpd_state_symbol(mpdstate);
+	int musicstate;
+	const char* song;
 
-	const char* song = mpd_get_song(modules->mpd);
-	if(!song || mpdstate == 1) {
+	if(use_mpd) {
+		musicstate = mpd_get_state(modules->mpd);
+		song = mpd_get_song(modules->mpd);
+	} else {
+		musicstate = playerctl_get_state(modules->playerctl);
+		song = playerctl_get_song(modules->playerctl);
+	}
+
+	sym = music_state_symbol(musicstate);
+	if(!song || musicstate == 1) {
 		song = "-";
 	}
 
@@ -170,17 +192,22 @@ void draw_dashboard(cairo_surface_t* surface, cairo_t* cr, struct modules* modul
 		}
 	}
 
+	// line before notes
+	cairo_move_to(cr, 60, 250);
+	cairo_line_to(cr, start_width - 60, 250);
+	cairo_set_line_width(cr, 0.5);
+	cairo_stroke(cr);
+
 	// notes
-	const char* notes[64];
-	unsigned count = notes_get(modules->notes, notes);
+	unsigned count;
+	const char** notes = notes_get(modules->notes, &count);
 	float y = 300.0;
 	for(unsigned i = 0u; i < count; ++i) {
 		// printf("node: %s (%d)\n", buf, len);
 		cairo_move_to(cr, 32.0, y);
 		cairo_show_text(cr, notes[i]);
-		free((void*) notes[i]);
 
-		y += 45;
+		y += 35;
 		if(y > 480) {
 			break;
 		}
@@ -190,8 +217,10 @@ void draw_dashboard(cairo_surface_t* surface, cairo_t* cr, struct modules* modul
 	cairo_surface_flush(surface);
 }
 
-void draw_banner(cairo_surface_t* surface, cairo_t* cr,
-		struct modules* modules, enum banner banner) {
+void ui_draw_banner(struct ui* ui, cairo_surface_t* surface, cairo_t* cr,
+		enum banner banner) {
+	struct modules* modules = ui->modules;
+
 	// background
 	cairo_set_source_rgba(cr, 0.1, 0.1, 0.1, 0.8);
 	cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
@@ -205,6 +234,7 @@ void draw_banner(cairo_surface_t* surface, cairo_t* cr,
 	cairo_move_to(cr, 20.0, 40.0);
 	cairo_show_text(cr, sym);
 
+	cairo_set_line_width(cr, 1.0);
 	if(banner == banner_volume || banner == banner_brightness) {
 		unsigned percent = 0;
 		if(banner == banner_volume) {
@@ -220,8 +250,18 @@ void draw_banner(cairo_surface_t* surface, cairo_t* cr,
 		cairo_set_source_rgba(cr, 1, 1, 1, 1);
 		cairo_stroke(cr);
 	} else if(banner == banner_music) {
-		const char* song = mpd_get_song(modules->mpd);
-		if(!song || mpd_get_state(modules->mpd) == 1) {
+		const char* song;
+		int state;
+
+		if(use_mpd) {
+			song = mpd_get_song(modules->mpd);
+			state = mpd_get_state(modules->mpd);
+		} else {
+			song = playerctl_get_song(modules->playerctl);
+			state = playerctl_get_state(modules->playerctl);
+		}
+
+		if(!song || state == 1) {
 			song = "-";
 		}
 
@@ -295,4 +335,14 @@ void draw_banner(cairo_surface_t* surface, cairo_t* cr,
 
 	// finish
 	cairo_surface_flush(surface);
+}
+
+struct ui* ui_create(struct modules* modules) {
+	struct ui* ui = calloc(1, sizeof(*ui));
+	ui->modules = modules;
+	return ui;
+}
+
+void ui_destroy(struct ui* ui) {
+	free(ui);
 }

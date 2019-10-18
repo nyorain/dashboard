@@ -34,6 +34,15 @@
       shouldn't require to have sqlite/alsa/mpd installed
 - [ ] go all the way with renaming dashboard ->
       dui (desktop/dashboard ui/utility information; some mashup of those)
+- [ ] volume module: show current output/allow switching
+      maybe allow to name them manually (e.g. headphone/speaker/monitor).
+	  We probably need to use pulseaudio instead of alsa for that though.
+	  And that requires us to use their sophisticated (speak: complicated)
+	  main loop approach.
+	  See https://github.com/pulseaudio/pulseaudio/blob/master/src/utils/pactl.c
+	- [ ] current bug: when audio output is switched, volume change
+	      isn't noticed correctly anymore.
+		  Could maybe be fixed without using pulseaudio though
 
 Not sure if useful for this project or seperate project:
 there probably already is something for this i guess.
@@ -54,7 +63,7 @@ like "desktop-ui"
 		  be good enough
 
 later/not sure yet:
-- [ ] replace mpd control with playerctl? (or add it as alternative)
+- [x] replace mpd control with playerctl? (or add it as alternative)
       could show the first player we find that is currently playing.
 	  if none is playing, show mpd (note that this requires mpd-mpris)
 	  in case e.g. chromium is playing, could also show

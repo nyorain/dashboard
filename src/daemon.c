@@ -30,6 +30,8 @@ struct context {
 
 	bool showing_dashboard;
 
+	struct ui* ui;
+	struct display* display;
 	struct modules modules;
 } ctx = {0};
 
@@ -57,13 +59,19 @@ static void handle_msg(char* msg, unsigned length) {
 	*newline = '\0';
 	printf("Command: %s\n", msg);
 	if(strcmp(msg, "mpd next") == 0) {
-		mpd_next(ctx.modules.mpd);
+		if(ctx.modules.mpd) mpd_next(ctx.modules.mpd);
 	} else if(strcmp(msg, "mpd prev") == 0) {
-		mpd_prev(ctx.modules.mpd);
+		if(ctx.modules.mpd) mpd_prev(ctx.modules.mpd);
 	} else if(strcmp(msg, "mpd toggle") == 0) {
-		mpd_toggle(ctx.modules.mpd);
+		if(ctx.modules.mpd) mpd_toggle(ctx.modules.mpd);
+	}else if(strcmp(msg, "playerctl next") == 0) {
+		if(ctx.modules.playerctl) playerctl_next(ctx.modules.playerctl);
+	} else if(strcmp(msg, "playerctl prev") == 0) {
+		if(ctx.modules.playerctl) playerctl_prev(ctx.modules.playerctl);
+	} else if(strcmp(msg, "playerctl toggle") == 0) {
+		if(ctx.modules.playerctl) playerctl_toggle(ctx.modules.playerctl);
 	} else if(strcmp(msg, "dashboard toggle") == 0) {
-		display_toggle_dashboard(ctx.modules.display);
+		display_toggle_dashboard(ctx.display);
 	} else {
 		printf("Unknown message: '%s'\n", msg);
 	}
@@ -109,7 +117,7 @@ void add_poll_handler(int fd, unsigned events, void* data,
 }
 
 struct display* display_get() {
-	return ctx.modules.display;
+	return ctx.display;
 }
 
 int main() {
@@ -137,15 +145,17 @@ int main() {
 	add_poll_handler(ctx.fifo, POLLIN, NULL, fifo_read);
 
 	// try to create all modules
+	ctx.ui = ui_create(&ctx.modules);
+	ctx.display = display_create_x11(ctx.ui);
 	ctx.modules.mpd = mpd_create();
 	ctx.modules.volume = volume_create();
 	ctx.modules.notes = notes_create();
 	ctx.modules.brightness = brightness_create();
 	ctx.modules.battery = battery_create();
-	ctx.modules.display = display_create_x11(&ctx.modules);
+	ctx.modules.playerctl = playerctl_create();
 
 	// critical modules
-	if(!ctx.modules.display) {
+	if(!ctx.display) {
 		return EXIT_FAILURE;
 	}
 
@@ -166,10 +176,12 @@ int main() {
 	}
 
 	// modules
-	if(ctx.modules.display) display_destroy(ctx.modules.display);
 	if(ctx.modules.battery) battery_destroy(ctx.modules.battery);
 	if(ctx.modules.mpd) mpd_destroy(ctx.modules.mpd);
 	if(ctx.modules.volume) volume_destroy(ctx.modules.volume);
 	if(ctx.modules.notes) notes_destroy(ctx.modules.notes);
 	if(ctx.modules.brightness) brightness_destroy(ctx.modules.brightness);
+	if(ctx.modules.playerctl) playerctl_destroy(ctx.modules.playerctl);
+	if(ctx.display) display_destroy(ctx.display);
+	if(ctx.ui) ui_destroy(ctx.ui);
 }

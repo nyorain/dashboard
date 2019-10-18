@@ -24,7 +24,7 @@
 
 struct display_x11 {
 	struct display display;
-	struct modules* modules;
+	struct ui* ui;
 	xcb_connection_t* connection;
 	xcb_screen_t* screen;
 	xcb_ewmh_connection_t ewmh;
@@ -52,9 +52,6 @@ struct display_x11 {
 	int timer;
 };
 
-// size of the dashboard
-static const unsigned start_width = 800;
-static const unsigned start_height = 500;
 // margin of the banner on screen
 static const unsigned banner_margin_x = 20;
 static const unsigned banner_margin_y = 20;
@@ -169,10 +166,10 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 		case XCB_MAP_NOTIFY:
 		case XCB_EXPOSE:
 			if(ctx->dashboard) {
-				draw_dashboard(ctx->surface, ctx->cr, ctx->modules);
+				ui_draw_dashboard(ctx->ui, ctx->surface, ctx->cr);
 				xcb_flush(ctx->connection);
 			} else if(ctx->banner != banner_none) {
-				draw_banner(ctx->surface, ctx->cr, ctx->modules, ctx->banner);
+				ui_draw_banner(ctx->ui, ctx->surface, ctx->cr, ctx->banner);
 				xcb_flush(ctx->connection);
 			}
 			break;
@@ -305,10 +302,10 @@ static const struct display_impl x11_impl = {
 	.show_banner = show_banner,
 };
 
-struct display* display_create_x11(struct modules* modules) {
+struct display* display_create_x11(struct ui* ui) {
 	struct display_x11* ctx = calloc(1, sizeof(*ctx));
 	ctx->display.impl = &x11_impl;
-	ctx->modules = modules;
+	ctx->ui = ui;
 	ctx->override_redirect = true;
 
 	// setup xcb connection
