@@ -117,20 +117,20 @@ enum music_state mod_music_get_state(struct mod_music* mpd) {
 	return mpd->state;
 }
 
-void mod_music_music_next(struct mod_music* mpd) {
+void mod_music_next(struct mod_music* mpd) {
 	if(mpd->idle) mpd_run_noidle(mpd->connection);
 		mpd_run_next(mpd->connection);
 		mpd_fill(mpd);
 	if(mpd->idle) mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER); \
-	display_show_banner(display_get(), banner_music);
+	display_show_banner(mpd->dpy, banner_music);
 }
 
-void mod_music_music_prev(struct mod_music* mpd) {
+void mod_music_prev(struct mod_music* mpd) {
 	if(mpd->idle) mpd_run_noidle(mpd->connection);
 		mpd_run_previous(mpd->connection);
 		mpd_fill(mpd);
 	if(mpd->idle) mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER); \
-	display_show_banner(display_get(), banner_music);
+	display_show_banner(mpd->dpy, banner_music);
 }
 
 void mod_music_toggle(struct mod_music* mpd) {
@@ -138,5 +138,5 @@ void mod_music_toggle(struct mod_music* mpd) {
 		mpd_run_toggle_pause(mpd->connection);
 		mpd_fill(mpd);
 	if(mpd->idle) mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER); \
-	display_show_banner(display_get(), banner_music);
+	display_show_banner(mpd->dpy, banner_music);
 }

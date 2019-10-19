@@ -46,31 +46,25 @@ dui_deps = [
 ]
 
 # mod_music
-dep_playerctl = dependency('playerctl', required: get_option('impl-music') == 'playerctl')
-dep_mpd = dependency('libmpdclient', required: get_option('impl-music') == 'mpd')
-
 music_impl = 'dummy'
-if dep_playerctl.found()
+if get_option('impl-music') == 'playerctl'
 	music_impl = 'playerctl'
-	dui_deps += [dep_playerctl]
-elif dep_mpd.found()
+	dui_deps += [dependency('playerctl', required: true)]
+elif get_option('impl-music') == 'mpd'
 	music_impl = 'mpd'
-	dui_deps += [dep_mpd]
+	dui_deps += [dependency('libmpdclient', required: true)]
 endif
 
 dui_src += files('src/music_' + music_impl + '.c')
 
 # mod_audio
-dep_alsa = dependency('alsa', required: get_option('impl-audio') == 'alsa')
-dep_pulse = dependency('libpulse', required: get_option('impl-audio') == 'pulse')
-
 audio_impl = 'dummy'
-if dep_alsa.found()
+if get_option('impl-audio') == 'alsa'
 	audio_impl = 'alsa'
-	dui_deps += [dep_alsa]
-elif
+	dui_deps += [dependency('alsa', required: true)]
+elif get_option('impl-audio') == 'pulse'
 	audio_impl = 'pulse'
-	dui_deps += [dep_pulse]
+	dui_deps += [dependency('libpulse', required: true)]
 endif
 
 dui_src += files('src/audio_' + audio_impl + '.c')
