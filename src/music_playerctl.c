@@ -1,39 +1,42 @@
-#include "config.h"
 #include <stdlib.h>
-
-#ifdef WITH_PLAYERCTL
 #include <stdio.h>
 #include <assert.h>
 #include <playerctl/playerctl.h>
 #include "shared.h"
+#include "music.h"
+#include "display.h"
+#include "banner.h"
 
 #define MAX_PLAYER_COUNT 16
 
-struct playerctl {
+struct mod_music {
+	struct display* dpy;
 	PlayerctlPlayerManager* manager;
-	int state;
+	enum music_state state;
 	char songbuf[256]; // "artist - title"
 	PlayerctlPlayer* player; // selected player
-
-	// for signal disconnecting
-	int sid_metadata;
+	int sid_metadata; // for signal disconnecting
 };
 
 static gboolean status_callback(PlayerctlPlayer* player,
-	PlayerctlPlaybackStatus status, struct playerctl* pc);
+	PlayerctlPlaybackStatus status, struct mod_music* pc);
 static gboolean metadata_callback(PlayerctlPlayer* player,
-	GVariant* metadata, struct playerctl* pc);
+	GVariant* metadata, struct mod_music* pc);
 
-int convert_state(PlayerctlPlaybackStatus status) {
+enum music_state convert_state(PlayerctlPlaybackStatus status) {
 	switch(status) {
-		case PLAYERCTL_PLAYBACK_STATUS_PLAYING: return 2;
-		case PLAYERCTL_PLAYBACK_STATUS_PAUSED: return 3;
-		case PLAYERCTL_PLAYBACK_STATUS_STOPPED: return 1;
-		default: return 0;
+		case PLAYERCTL_PLAYBACK_STATUS_PLAYING:
+			return music_state_playing;
+		case PLAYERCTL_PLAYBACK_STATUS_PAUSED:
+			return music_state_paused;
+		case PLAYERCTL_PLAYBACK_STATUS_STOPPED:
+			return music_state_stopped;
+		default:
+			return music_state_none;
 	}
 }
 
-static void reload_state(struct playerctl* pc) {
+static void reload_state(struct mod_music* pc) {
 	if(!pc->player) {
 		snprintf(pc->songbuf, sizeof(pc->songbuf), "-");
 		pc->state = 1;
@@ -71,10 +74,11 @@ static void reload_state(struct playerctl* pc) {
 	// shouldn't be too hard to compare.
 	// Needed since e.g. mpd has something like seektime as metadata,
 	// which changes *really* often.
-	display_redraw_dashboard(display_get());
+	display_redraw(pc->dpy, banner_music);
+	// printf("state: %d, song: %s\n", (int) pc->state, pc->songbuf);
 }
 
-static void change_player(struct playerctl* pc, PlayerctlPlayer* player) {
+static void change_player(struct mod_music* pc, PlayerctlPlayer* player) {
 	if(pc->player) {
 		g_signal_handler_disconnect(pc->player, pc->sid_metadata);
 	}
@@ -90,21 +94,24 @@ static void change_player(struct playerctl* pc, PlayerctlPlayer* player) {
 // Selects just the first playing player.
 // Otherwise will choose mpd if available.
 // Otherwise will just choose the first player.
-static void select_player(struct playerctl* pc) {
+static void select_player(struct mod_music* pc) {
 	PlayerctlPlayer* found = NULL;
 
 	GList* players = NULL;
     g_object_get(pc->manager, "players", &players, NULL);
     for(GList* l = players; l != NULL; l = l->next) {
 		PlayerctlPlayer* player = l->data;
-		gchar* name;
-		g_object_get(player, "player-name", &name, NULL);
 
 		PlayerctlPlaybackStatus status;
 		g_object_get(player, "playback-status", &status, NULL);
 		if(status == PLAYERCTL_PLAYBACK_STATUS_PLAYING) {
 			found = player;
-		} else if(strcmp(name, "mpd") == 0) {
+			break;
+		}
+
+		gchar* name;
+		g_object_get(player, "player-name", &name, NULL);
+		if(strcmp(name, "mpd") == 0) {
 			found = player;
 		} else if(!found) {
 			found = player;
@@ -117,17 +124,18 @@ static void select_player(struct playerctl* pc) {
 }
 
 static gboolean status_callback(PlayerctlPlayer* player,
-		PlayerctlPlaybackStatus status, struct playerctl* pc) {
+		PlayerctlPlaybackStatus status, struct mod_music* pc) {
 	// TODO: we could additionally always switch to the currently
 	// playing player if there is one.
 	// Only relevant when multiple players are playing which shouldn't
 	// be the case, ever, anyways.
 	if(player == pc->player) {
 		pc->state = convert_state(status);
+		// printf("state: %d, song: %s\n", (int) pc->state, pc->songbuf);
 		if(status == PLAYERCTL_PLAYBACK_STATUS_STOPPED) {
 			select_player(pc);
 		} else {
-			display_redraw_dashboard(display_get());
+			display_redraw(pc->dpy, banner_music);
 		}
 	} else if(status == PLAYERCTL_PLAYBACK_STATUS_PLAYING && (pc->state != 2)) {
 		change_player(pc, player);
@@ -137,16 +145,15 @@ static gboolean status_callback(PlayerctlPlayer* player,
 }
 
 static gboolean metadata_callback(PlayerctlPlayer* player, GVariant* metadata,
-		struct playerctl* pc) {
+		struct mod_music* pc) {
 	assert(player == pc->player);
 	reload_state(pc);
-	display_redraw_dashboard(display_get());
+	display_redraw(pc->dpy, banner_music);
 	return true;
 }
 
 static void name_appeared_callback(PlayerctlPlayerManager* manager,
-		PlayerctlPlayerName* name, struct playerctl* pc) {
-	printf("name appeared\n");
+		PlayerctlPlayerName* name, struct mod_music* pc) {
 	GError* error;
 	PlayerctlPlayer* player = playerctl_player_new_from_name(name, &error);
 	if(error != NULL) {
@@ -165,8 +172,7 @@ static void name_appeared_callback(PlayerctlPlayerManager* manager,
 }
 
 static void player_vanished_callback(PlayerctlPlayerManager* manager,
-		PlayerctlPlayer* player, struct playerctl* pc) {
-	printf("player vanished\n");
+		PlayerctlPlayer* player, struct mod_music* pc) {
 	if(pc->player == player) {
 		pc->player = NULL;
 		pc->sid_metadata = -1;
@@ -191,10 +197,11 @@ static void dispatch(int fd, unsigned revents, void* data) {
 	assert(gfd.fd == fd);
 }
 
-struct playerctl* playerctl_create(void) {
+struct mod_music* mod_music_create(struct display* dpy) {
 	GError* error = NULL;
 
-	struct playerctl* pc = calloc(1, sizeof(*pc));
+	struct mod_music* pc = calloc(1, sizeof(*pc));
+	pc->dpy = dpy;
 	pc->manager = playerctl_player_manager_new(&error);
 	if(error != NULL) {
 		printf("Can't create playerctl manager: %s\n", error->message);
@@ -213,7 +220,6 @@ struct playerctl* playerctl_create(void) {
     g_object_get(pc->manager, "player-names", &available_players, NULL);
     for(GList* l = available_players; l != NULL; l = l->next) {
 		PlayerctlPlayerName* name = l->data;
-		printf("Found player: %s, %s\n", name->name, name->instance);
 
 		PlayerctlPlayer* player = playerctl_player_new_from_name(name, &error);
 		if(error != NULL) {
@@ -247,20 +253,20 @@ struct playerctl* playerctl_create(void) {
 	return pc;
 }
 
-void playerctl_destroy(struct playerctl* pc) {
+void mod_music_destroy(struct mod_music* pc) {
 	if(pc->manager) g_object_unref(pc->manager);
 	free(pc);
 }
 
-const char* playerctl_get_song(struct playerctl* pc) {
+const char* mod_music_get_song(struct mod_music* pc) {
 	return pc->songbuf;
 }
 
-int playerctl_get_state(struct playerctl* pc) {
+enum music_state mod_music_get_state(struct mod_music* pc) {
 	return pc->state;
 }
 
-void playerctl_next(struct playerctl* pc) {
+void mod_music_next(struct mod_music* pc) {
 	if(!pc->player) {
 		printf("playerctl next: no active player\n");
 		return;
@@ -273,10 +279,10 @@ void playerctl_next(struct playerctl* pc) {
 		return;
 	}
 
-	display_show_banner(display_get(), banner_music);
+	display_show_banner(pc->dpy, banner_music);
 }
 
-void playerctl_prev(struct playerctl* pc) {
+void mod_music_prev(struct mod_music* pc) {
 	if(!pc->player) {
 		printf("playerctl prev: no active player\n");
 		return;
@@ -289,10 +295,10 @@ void playerctl_prev(struct playerctl* pc) {
 		return;
 	}
 
-	display_show_banner(display_get(), banner_music);
+	display_show_banner(pc->dpy, banner_music);
 }
 
-void playerctl_toggle(struct playerctl* pc) {
+void mod_music_toggle(struct mod_music* pc) {
 	if(!pc->player) {
 		printf("playerctl toggle: no active player\n");
 		return;
@@ -305,17 +311,5 @@ void playerctl_toggle(struct playerctl* pc) {
 		return;
 	}
 
-	display_show_banner(display_get(), banner_music);
+	display_show_banner(pc->dpy, banner_music);
 }
-
-#else // HAVE_PLAYERCTL
-
-struct playerctl* playerctl_create(void) { return NULL; }
-void playerctl_destroy(struct playerctl* pc) {}
-const char* playerctl_get_song(struct playerctl* pc) { return NULL; }
-int playerctl_get_state(struct playerctl* pc) { return 0; }
-void playerctl_next(struct playerctl* pc) {}
-void playerctl_prev(struct playerctl* pc) {}
-void playerctl_toggle(struct playerctl* pc) {}
-
-#endif

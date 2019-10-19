@@ -21,6 +21,8 @@
 #include <cairo/cairo-xcb.h>
 
 #include "shared.h"
+#include "display.h"
+#include "ui.h"
 
 struct display_x11 {
 	struct display display;
@@ -166,10 +168,12 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 		case XCB_MAP_NOTIFY:
 		case XCB_EXPOSE:
 			if(ctx->dashboard) {
-				ui_draw_dashboard(ctx->ui, ctx->surface, ctx->cr);
+				ui_draw(ctx->ui, ctx->surface, ctx->cr, ctx->width,
+					ctx->height, banner_none);
 				xcb_flush(ctx->connection);
 			} else if(ctx->banner != banner_none) {
-				ui_draw_banner(ctx->ui, ctx->surface, ctx->cr, ctx->banner);
+				ui_draw(ctx->ui, ctx->surface, ctx->cr, ctx->width,
+					ctx->height, ctx->banner);
 				xcb_flush(ctx->connection);
 			}
 			break;
@@ -286,19 +290,17 @@ static void destroy(struct display* base) {
 	}
 }
 
-static void redraw_dashboard(struct display* base) {
+static void redraw(struct display* base, enum banner banner) {
 	struct display_x11* dpy = (struct display_x11*) base;
-	if(!dpy->dashboard) {
-		return;
+	if(dpy->dashboard || (dpy->banner != banner_none && dpy->banner == banner)) {
+		send_expose_event(dpy);
 	}
-
-	send_expose_event(dpy);
 }
 
 static const struct display_impl x11_impl = {
 	.destroy = destroy,
 	.toggle_dashboard = toggle_dashboard,
-	.redraw_dashboard = redraw_dashboard,
+	.redraw = redraw,
 	.show_banner = show_banner,
 };
 

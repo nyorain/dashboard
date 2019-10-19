@@ -17,7 +17,7 @@ foreach dep : dui_deps
 	endif
 endforeach
 
-conf_data.set10('HAVE_X11', found_x11)
+conf_data.set10('WITH_X11', found_x11)
 if found_x11
 	dui_src += files('display.c')
 endif

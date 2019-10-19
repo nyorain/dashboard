@@ -1,5 +1,7 @@
 #define _POSIX_C_SOURCE 201710L
 
+#include "config.h"
+#ifdef WITH_NOTES
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,11 +11,14 @@
 #include <sqlite3.h>
 #include <sys/inotify.h>
 #include "shared.h"
+#include "notes.h"
+#include "display.h"
 
 static const char* nodesfile = "/home/nyorain/docs/nodes/nodes.db";
 #define MAX_NOTE_COUNT 16
 
-struct notes {
+struct mod_notes {
+	struct display* dpy;
 	sqlite3* db;
 	sqlite3_stmt* stmt;
 	int wd;
@@ -25,18 +30,18 @@ struct notes {
 
 static void changed(const struct inotify_event* ev, void* data) {
 	(void) ev;
-	struct notes* notes = (struct notes*) data;
+	struct mod_notes* notes = (struct mod_notes*) data;
 	notes->valid = false;
-	display_redraw_dashboard(display_get());
+	display_redraw(notes->dpy, banner_none);
 }
 
-static void free_notes(struct notes* notes) {
+static void free_notes(struct mod_notes* notes) {
 	for(unsigned i = 0u; i < notes->notes_count; ++i) {
 		free((void*) notes->notes[i]);
 	}
 }
 
-static void reload(struct notes* notes) {
+static void reload(struct mod_notes* notes) {
 	unsigned count = 0;
 	const char* notes_buf[MAX_NOTE_COUNT];
 	int err;
@@ -69,8 +74,9 @@ static void reload(struct notes* notes) {
 	notes->valid = true;
 }
 
-struct notes* notes_create() {
-	struct notes* notes = calloc(1, sizeof(*notes));
+struct mod_notes* mod_notes_create(struct display* dpy) {
+	struct mod_notes* notes = calloc(1, sizeof(*notes));
+	notes->dpy = dpy;
 	int err = sqlite3_open(nodesfile, &notes->db);
 	if(err != SQLITE_OK) {
 		printf("Can't open sqlite database: %s\n", sqlite3_errmsg(notes->db));
@@ -99,11 +105,14 @@ struct notes* notes_create() {
 	return notes;
 
 err:
-	notes_destroy(notes);
+	mod_notes_destroy(notes);
 	return NULL;
 }
 
-void notes_destroy(struct notes* notes) {
+void mod_notes_destroy(struct mod_notes* notes) {
+	if(!notes) {
+		return;
+	}
 	if(notes->wd) {
 		rm_inotify_watch(notes->wd);
 	}
@@ -114,7 +123,7 @@ void notes_destroy(struct notes* notes) {
 	free(notes);
 }
 
-const char** notes_get(struct notes* notes, unsigned* count) {
+const char** mod_notes_get(struct mod_notes* notes, unsigned* count) {
 	if(!notes->valid) {
 		reload(notes);
 	}
@@ -122,3 +131,16 @@ const char** notes_get(struct notes* notes, unsigned* count) {
 	*count = notes->notes_count;
 	return notes->notes;
 }
+
+#else // WITH_NOTES
+
+#include <stdlib.h>
+
+struct mod_notes* mod_notes_create(struct display* dpy) { return NULL; }
+void mod_notes_destroy(struct mod_notes* m) {}
+const char** mod_notes_get(struct mod_notes* m, unsigned* count) {
+	*count = 0;
+	return NULL;
+}
+
+#endif

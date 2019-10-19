@@ -4,12 +4,16 @@
 #include <math.h>
 #include <sys/inotify.h>
 #include "shared.h"
+#include "brightness.h"
+#include "banner.h"
+#include "display.h"
 
 #define BASE_PATH "/sys/class/backlight/intel_backlight/"
 static const char* path_max = BASE_PATH "max_brightness";
 static const char* path_current = BASE_PATH "actual_brightness";
 
-struct brightness {
+struct mod_brightness {
+	struct display* dpy;
 	int wd; // inotify watcher
 	int percent;
 };
@@ -40,30 +44,30 @@ static int read_percent() {
 
 static void callback(const struct inotify_event* ev, void* data) {
 	(void) ev;
-	struct brightness* brightness = (struct brightness*) data;
-	brightness->percent = read_percent();
-	display_redraw_dashboard(display_get());
-	display_show_banner(display_get(), banner_brightness);
+	struct mod_brightness* mod = (struct mod_brightness*) data;
+	mod->percent = read_percent();
+	display_redraw(mod->dpy, banner_none);
+	display_show_banner(mod->dpy, banner_brightness);
 }
 
-struct brightness* brightness_create(void) {
+struct mod_brightness* mod_brightness_create(struct display* dpy) {
 	int p = read_percent();
 	if(p < 0) {
 		return NULL;
 	}
 
-	struct brightness* brightness = calloc(1, sizeof(*brightness));
-	brightness->percent = p;
-	brightness->wd = add_inotify_watch(path_current, IN_MODIFY, brightness,
-		callback);
-	return brightness;
+	struct mod_brightness* mod = calloc(1, sizeof(*mod));
+	mod->dpy = dpy;
+	mod->percent = p;
+	mod->wd = add_inotify_watch(path_current, IN_MODIFY, mod, callback);
+	return mod;
 }
 
-void brightness_destroy(struct brightness* brightness) {
-	rm_inotify_watch(brightness->wd);
-	free(brightness);
+void mod_brightness_destroy(struct mod_brightness* mod) {
+	rm_inotify_watch(mod->wd);
+	free(mod);
 }
 
-int brightness_get(struct brightness* b) {
-	return b->percent;
+int mod_brightness_get(struct mod_brightness* mod) {
+	return mod->percent;
 }

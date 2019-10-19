@@ -15,6 +15,13 @@
 #include <fcntl.h>
 
 #include "shared.h"
+#include "display.h"
+#include "music.h"
+#include "audio.h"
+#include "brightness.h"
+#include "power.h"
+#include "notes.h"
+#include "ui.h"
 
 struct poll_handler {
 	pollfd_callback callback;
@@ -58,18 +65,12 @@ static void handle_msg(char* msg, unsigned length) {
 
 	*newline = '\0';
 	printf("Command: %s\n", msg);
-	if(strcmp(msg, "mpd next") == 0) {
-		if(ctx.modules.mpd) mpd_next(ctx.modules.mpd);
-	} else if(strcmp(msg, "mpd prev") == 0) {
-		if(ctx.modules.mpd) mpd_prev(ctx.modules.mpd);
-	} else if(strcmp(msg, "mpd toggle") == 0) {
-		if(ctx.modules.mpd) mpd_toggle(ctx.modules.mpd);
-	}else if(strcmp(msg, "playerctl next") == 0) {
-		if(ctx.modules.playerctl) playerctl_next(ctx.modules.playerctl);
-	} else if(strcmp(msg, "playerctl prev") == 0) {
-		if(ctx.modules.playerctl) playerctl_prev(ctx.modules.playerctl);
-	} else if(strcmp(msg, "playerctl toggle") == 0) {
-		if(ctx.modules.playerctl) playerctl_toggle(ctx.modules.playerctl);
+	if(strcmp(msg, "music next") == 0) {
+		if(ctx.modules.music) mod_music_next(ctx.modules.music);
+	} else if(strcmp(msg, "music prev") == 0) {
+		if(ctx.modules.music) mod_music_prev(ctx.modules.music);
+	} else if(strcmp(msg, "music toggle") == 0) {
+		if(ctx.modules.music) mod_music_toggle(ctx.modules.music);
 	} else if(strcmp(msg, "dashboard toggle") == 0) {
 		display_toggle_dashboard(ctx.display);
 	} else {
@@ -116,10 +117,6 @@ void add_poll_handler(int fd, unsigned events, void* data,
 	ctx.poll_handler[c].data = data;
 }
 
-struct display* display_get() {
-	return ctx.display;
-}
-
 int main() {
 	// init daemon fifo
 	// EEXIST simply means that the file already exists. We just
@@ -146,13 +143,12 @@ int main() {
 
 	// try to create all modules
 	ctx.ui = ui_create(&ctx.modules);
-	ctx.display = display_create_x11(ctx.ui);
-	ctx.modules.mpd = mpd_create();
-	ctx.modules.volume = volume_create();
-	ctx.modules.notes = notes_create();
-	ctx.modules.brightness = brightness_create();
-	ctx.modules.battery = battery_create();
-	ctx.modules.playerctl = playerctl_create();
+	ctx.display = display_create(ctx.ui);
+	ctx.modules.music = mod_music_create(ctx.display);
+	ctx.modules.audio = mod_audio_create(ctx.display);
+	ctx.modules.notes = mod_notes_create(ctx.display);
+	ctx.modules.brightness = mod_brightness_create(ctx.display);
+	ctx.modules.power = mod_power_create(ctx.display);
 
 	// critical modules
 	if(!ctx.display) {
@@ -176,12 +172,11 @@ int main() {
 	}
 
 	// modules
-	if(ctx.modules.battery) battery_destroy(ctx.modules.battery);
-	if(ctx.modules.mpd) mpd_destroy(ctx.modules.mpd);
-	if(ctx.modules.volume) volume_destroy(ctx.modules.volume);
-	if(ctx.modules.notes) notes_destroy(ctx.modules.notes);
-	if(ctx.modules.brightness) brightness_destroy(ctx.modules.brightness);
-	if(ctx.modules.playerctl) playerctl_destroy(ctx.modules.playerctl);
+	if(ctx.modules.power) mod_power_destroy(ctx.modules.power);
+	if(ctx.modules.music) mod_music_destroy(ctx.modules.music);
+	if(ctx.modules.audio) mod_audio_destroy(ctx.modules.audio);
+	if(ctx.modules.notes) mod_notes_destroy(ctx.modules.notes);
+	if(ctx.modules.brightness) mod_brightness_destroy(ctx.modules.brightness);
 	if(ctx.display) display_destroy(ctx.display);
 	if(ctx.ui) ui_destroy(ctx.ui);
 }

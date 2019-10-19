@@ -6,6 +6,8 @@
 	  and stuff and redraw when mapped again)
 - [x] add battery module for laptop
 	- [x] battery doesn't have to update while open
+- [ ] refresh time in dashboard. Probably best done via timerfd/
+      timeout tracking in main loop?
 - [ ] better layout. Instead of hardcoding all positions, define it via
       boxes, margins, paddings and borders i guess?
 	- [ ] allow click events? clicking on date/time gives calendar,
@@ -30,7 +32,7 @@
       notification window, use "..."
 	- [ ] better mpd notification layout? with the title displaying
 	      in a larger font and the artist in a second line?
-- [ ] make modules compile-time options.
+- [x] make modules compile-time options.
       shouldn't require to have sqlite/alsa/mpd installed
 - [ ] go all the way with renaming dashboard ->
       dui (desktop/dashboard ui/utility information; some mashup of those)
@@ -43,6 +45,7 @@
 	- [ ] current bug: when audio output is switched, volume change
 	      isn't noticed correctly anymore.
 		  Could maybe be fixed without using pulseaudio though
+	- [ ] best solution probably: pulse audio backend
 
 Not sure if useful for this project or seperate project:
 there probably already is something for this i guess.

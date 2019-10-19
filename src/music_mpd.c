@@ -9,27 +9,19 @@
 #include <sys/poll.h>
 #include <mpd/client.h>
 #include "shared.h"
+#include "music.h"
+#include "display.h"
+#include "banner.h"
 
-struct mpd {
+struct mod_music {
+	struct display* dpy;
 	struct mpd_connection* connection;
 	char songbuf[256]; // "artist - title"
-	enum mpd_state state;
+	enum music_state state;
 	bool idle;
 };
 
-// Simple macro that wraps the code 'x' so that we previously
-// cancel the idle state (if there is one) and afterwards
-// resume it.
-#define WRAP_NOIDLE(x) \
-	if(mpd->idle) { \
-		mpd_run_noidle(mpd->connection); \
-	} \
-	x \
-	if(mpd->idle) { \
-		mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER); \
-	}
-
-static bool mpd_check_error(struct mpd* mpd) {
+static bool mpd_check_error(struct mod_music* mpd) {
 	enum mpd_error error = mpd_connection_get_error(mpd->connection);
 	if(error != MPD_ERROR_SUCCESS) {
 		const char* msg = mpd_connection_get_error_message(mpd->connection);
@@ -40,12 +32,12 @@ static bool mpd_check_error(struct mpd* mpd) {
 	}
 }
 
-static void mpd_fill(struct mpd* mpd) {
+static void mpd_fill(struct mod_music* mpd) {
 	// song
 	struct mpd_song* song = mpd_run_current_song(mpd->connection);
 	if(!song) {
 		// TODO: this always returns a song, even when stopped...
-		// rather user the state
+		// rather use the state
 		mpd_check_error(mpd);
 		mpd->songbuf[0] = '\0';
 		return;
@@ -62,25 +54,26 @@ static void mpd_fill(struct mpd* mpd) {
 	snprintf(mpd->songbuf, sizeof(mpd->songbuf), "%s - %s", artist, title);
 
 	struct mpd_status* status = mpd_run_status(mpd->connection);
-	mpd->state = mpd_status_get_state(status);
+	mpd->state = (enum music_state) mpd_status_get_state(status);
 	mpd_status_free(status);
 }
 
 static void mpd_read(int fd, unsigned revents, void* data) {
 	(void) fd;
 	(void) revents;
-	struct mpd* mpd = (struct mpd*) data;
+	struct mod_music* mpd = (struct mod_music*) data;
 
 	if(mpd_run_noidle(mpd->connection) == MPD_IDLE_PLAYER) {
 		mpd_fill(mpd);
-		display_redraw_dashboard(display_get());
+		display_redraw(mpd->dpy, banner_music);
 	}
 
 	mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER);
 }
 
-struct mpd* mpd_create() {
-	struct mpd* mpd = calloc(1, sizeof(*mpd));
+struct mod_music* mod_music_create(struct display* dpy) {
+	struct mod_music* mpd = calloc(1, sizeof(*mpd));
+	mpd->dpy = dpy;
 	mpd->connection = mpd_connection_new(NULL, 0, 0);
 	if(mpd_check_error(mpd)) {
 		goto err;
@@ -99,11 +92,11 @@ struct mpd* mpd_create() {
 	return mpd;
 
 err:
-	mpd_destroy(mpd);
+	mod_music_destroy(mpd);
 	return NULL;
 }
 
-void mpd_destroy(struct mpd* mpd) {
+void mod_music_destroy(struct mod_music* mpd) {
 	if(mpd->idle) {
 		mpd_run_noidle(mpd->connection);
 	}
@@ -112,7 +105,7 @@ void mpd_destroy(struct mpd* mpd) {
 	free(mpd);
 }
 
-const char* mpd_get_song(struct mpd* mpd) {
+const char* mod_music_get_song(struct mod_music* mpd) {
 	if(mpd->songbuf[0] == '\0') {
 		return NULL;
 	}
@@ -120,30 +113,30 @@ const char* mpd_get_song(struct mpd* mpd) {
 	return mpd->songbuf;
 }
 
-int mpd_get_state(struct mpd* mpd) {
-	return (int) mpd->state;
+enum music_state mod_music_get_state(struct mod_music* mpd) {
+	return mpd->state;
 }
 
-void mpd_next(struct mpd* mpd) {
-	WRAP_NOIDLE(
+void mod_music_music_next(struct mod_music* mpd) {
+	if(mpd->idle) mpd_run_noidle(mpd->connection);
 		mpd_run_next(mpd->connection);
 		mpd_fill(mpd);
-	);
+	if(mpd->idle) mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER); \
 	display_show_banner(display_get(), banner_music);
 }
 
-void mpd_prev(struct mpd* mpd) {
-	WRAP_NOIDLE(
+void mod_music_music_prev(struct mod_music* mpd) {
+	if(mpd->idle) mpd_run_noidle(mpd->connection);
 		mpd_run_previous(mpd->connection);
 		mpd_fill(mpd);
-	);
+	if(mpd->idle) mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER); \
 	display_show_banner(display_get(), banner_music);
 }
 
-void mpd_toggle(struct mpd* mpd) {
-	WRAP_NOIDLE(
+void mod_music_toggle(struct mod_music* mpd) {
+	if(mpd->idle) mpd_run_noidle(mpd->connection);
 		mpd_run_toggle_pause(mpd->connection);
 		mpd_fill(mpd);
-	);
+	if(mpd->idle) mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER); \
 	display_show_banner(display_get(), banner_music);
 }

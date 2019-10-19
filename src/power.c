@@ -8,6 +8,7 @@
 #include <string.h>
 #include <errno.h>
 #include "shared.h"
+#include "power.h"
 
 // NOTE: we don't use inofity here since it wouldn't make a lot of
 // sense, battery status is pretty much continously changing.
@@ -16,8 +17,9 @@
 
 #define BASE_PATH "/sys/class/power_supply/"
 
-struct battery {
+struct mod_power {
 	// TODO: not used
+	struct display* dpy;
 	const char* battery_path;
 	const char* ac_path;
 };
@@ -32,7 +34,7 @@ static int read_int(FILE* file) {
     return n;
 }
 
-struct battery* battery_create(void) {
+struct mod_power* mod_power_create(struct display* dpy) {
 	DIR* d = opendir(BASE_PATH);
 	if(!d) {
 		printf("battery: opendir failed: %s (%d)\n", strerror(errno), errno);
@@ -55,17 +57,17 @@ struct battery* battery_create(void) {
 		return NULL;
 	}
 
-	struct battery* battery = calloc(1, sizeof(*battery));
-	return battery;
+	struct mod_power* mod = calloc(1, sizeof(*mod));
+	mod->dpy = dpy;
+	return mod;
 }
 
-void battery_destroy(struct battery* battery) {
-	free(battery);
+void mod_power_destroy(struct mod_power* mod) {
+	free(mod);
 }
 
-struct battery_status battery_get(struct battery* battery) {
-	(void) battery;
-	struct battery_status status = {0};
+struct mod_power_status mod_power_get(struct mod_power* mod) {
+	struct mod_power_status status = {0};
 
 	FILE* fcharging = fopen(BASE_PATH "AC/online", "r");
 	if(fcharging) {

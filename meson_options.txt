@@ -1,4 +1,15 @@
-option('with-x11', type: 'feature', value: 'auto', description: 'support for x11 backend')
-option('with-wayland', type: 'feature', value: 'disabled', description: 'support for wayland backend')
+option('with-notes', type: 'feature', value: 'auto', description: 'support for notes module')
+option('with-x11', type: 'feature', value: 'auto', description: 'support for x11 display backend')
+option('with-wl', type: 'feature', value: 'auto', description: 'support for wayland display backend')
 
-option('with-playerctl', type: 'feature', value: 'auto', description: 'support for playerctl module')
+option('impl-music',
+	type: 'combo',
+	choices: ['playerctl', 'mpd', 'dummy'],
+	value: 'playerctl',
+	description: 'Which music module implementation to use (static)')
+
+option('impl-audio',
+	type: 'combo',
+	choices: ['pulse', 'alsa', 'dummy'],
+	value: 'alsa',
+	description: 'Which audio module implementation to use (static)')
