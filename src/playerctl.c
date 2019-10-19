@@ -13,9 +13,6 @@ struct playerctl {
 	PlayerctlPlayerManager* manager;
 	int state;
 	char songbuf[256]; // "artist - title"
-
-	unsigned player_count;
-	PlayerctlPlayer* players[MAX_PLAYER_COUNT]; // all players
 	PlayerctlPlayer* player; // selected player
 
 	// for signal disconnecting
@@ -52,7 +49,15 @@ static void reload_state(struct playerctl* pc) {
 
 	// songbuf
 	gchar* gartist = playerctl_player_get_artist(pc->player, &error);
+	if(error != NULL) {
+		printf("Can't get artist: %s\n", error->message);
+	}
+
 	gchar* gtitle = playerctl_player_get_title(pc->player, &error);
+	if(error != NULL) {
+		printf("Can't get title: %s\n", error->message);
+	}
+
 	const char* artist = gartist;
 	const char* title = gtitle;
 	if(!artist) artist = "<unknown>";
@@ -87,8 +92,11 @@ static void change_player(struct playerctl* pc, PlayerctlPlayer* player) {
 // Otherwise will just choose the first player.
 static void select_player(struct playerctl* pc) {
 	PlayerctlPlayer* found = NULL;
-	for(unsigned i = 0u; i < pc->player_count; ++i) {
-		PlayerctlPlayer* player = pc->players[i];
+
+	GList* players = NULL;
+    g_object_get(pc->manager, "players", &players, NULL);
+    for(GList* l = players; l != NULL; l = l->next) {
+		PlayerctlPlayer* player = l->data;
 		gchar* name;
 		g_object_get(player, "player-name", &name, NULL);
 
@@ -136,32 +144,29 @@ static gboolean metadata_callback(PlayerctlPlayer* player, GVariant* metadata,
 	return true;
 }
 
-static void player_appeared_callback(PlayerctlPlayerManager* manager,
-		PlayerctlPlayer* player, struct playerctl* pc) {
-	if(pc->player_count < MAX_PLAYER_COUNT) {
-		pc->players[pc->player_count++] = player;
-		g_signal_connect(G_OBJECT(player),
-			"playback-status", G_CALLBACK(status_callback), pc);
-		if(!pc->player) {
-			pc->player = player;
-		}
-	} else {
-		printf("Reached MAX_PLAYER_COUNT\n");
+static void name_appeared_callback(PlayerctlPlayerManager* manager,
+		PlayerctlPlayerName* name, struct playerctl* pc) {
+	printf("name appeared\n");
+	GError* error;
+	PlayerctlPlayer* player = playerctl_player_new_from_name(name, &error);
+	if(error != NULL) {
+		printf("Can't create player: %s\n", error->message);
+		return;
+	}
+
+	g_signal_connect(G_OBJECT(player), "playback-status",
+		G_CALLBACK(status_callback), pc);
+	playerctl_player_manager_manage_player(manager, player);
+	g_object_unref(player); // will remain valid since manager refs it
+
+	if(!pc->player) {
+		change_player(pc, player);
 	}
 }
 
 static void player_vanished_callback(PlayerctlPlayerManager* manager,
 		PlayerctlPlayer* player, struct playerctl* pc) {
-	for(unsigned i = 0u; i < pc->player_count; ++i) {
-		if(pc->players[i] == player) {
-			g_object_unref(pc->players[i]);
-			unsigned size = (pc->player_count - i - 1) * sizeof(player);
-			memmove(pc->players, pc->players + i + 1, size);
-			--pc->player_count;
-			break;
-		}
-	}
-
+	printf("player vanished\n");
 	if(pc->player == player) {
 		pc->player = NULL;
 		pc->sid_metadata = -1;
@@ -197,8 +202,8 @@ struct playerctl* playerctl_create(void) {
 		return NULL;
 	}
 
-	g_signal_connect(PLAYERCTL_PLAYER_MANAGER(pc->manager), "player-appeared",
-		G_CALLBACK(player_appeared_callback), pc);
+	g_signal_connect(PLAYERCTL_PLAYER_MANAGER(pc->manager), "name-appeared",
+		G_CALLBACK(name_appeared_callback), pc);
 	g_signal_connect(PLAYERCTL_PLAYER_MANAGER(pc->manager), "player-vanished",
 		G_CALLBACK(player_vanished_callback), pc);
 
@@ -211,16 +216,16 @@ struct playerctl* playerctl_create(void) {
 		printf("Found player: %s, %s\n", name->name, name->instance);
 
 		PlayerctlPlayer* player = playerctl_player_new_from_name(name, &error);
+		if(error != NULL) {
+			printf("Can't create player: %s\n", error->message);
+			continue;
+		}
+
 		g_signal_connect(G_OBJECT(player), "playback-status",
 			G_CALLBACK(status_callback), pc);
-		pc->players[pc->player_count++] = player;
-		if(pc->player_count == MAX_PLAYER_COUNT) {
-			printf("Reached MAX_PLAYER_COUNT\n");
-			break;
-		}
+		playerctl_player_manager_manage_player(pc->manager, player);
+		g_object_unref(player);
 	}
-
-	if(available_players) g_list_free(available_players);
 
 	// initial selection
 	select_player(pc);
