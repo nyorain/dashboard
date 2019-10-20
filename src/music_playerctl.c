@@ -137,7 +137,7 @@ static gboolean status_callback(PlayerctlPlayer* player,
 		} else {
 			display_redraw(pc->dpy, banner_music);
 		}
-	} else if(status == PLAYERCTL_PLAYBACK_STATUS_PLAYING && (pc->state != 2)) {
+	} else if(status == PLAYERCTL_PLAYBACK_STATUS_PLAYING && (pc->state != music_state_playing)) {
 		change_player(pc, player);
 	}
 
