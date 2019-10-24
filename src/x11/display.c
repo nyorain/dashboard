@@ -114,9 +114,7 @@ static void display_map_dashboard(struct display_x11* ctx) {
 	// disable banner timer if active
 	if(ctx->banner != banner_none) {
 		ctx->banner = banner_none;
-		struct timespec time;
-		clock_gettime(CLOCK_REALTIME, &time);
-		ml_timer_restart(ctx->timer, &time);
+		ml_timer_restart(ctx->timer, NULL); // disable timer
 		xcb_unmap_window(ctx->connection, ctx->window);
 	}
 
