@@ -49,12 +49,13 @@ struct display_x11 {
 	cairo_surface_t* surface;
 	cairo_t* cr;
 
+	unsigned width, height;
 	enum banner banner; // whether a banner is active.
 	bool dashboard; // dashboard currently mapped
 
-	struct ml_io* io;
+	xcb_generic_event_t* pending;
+	struct ml_custom* source;
 	struct ml_timer* timer;
-	unsigned width, height;
 };
 
 // Simple macro that checks cookies returned by xcb *_checked calls
@@ -132,7 +133,6 @@ static void display_map_dashboard(struct display_x11* ctx) {
 	ctx->width = start_width;
 	ctx->height = start_height;
 
-	xcb_flush(ctx->connection);
 	ctx->dashboard = true;
 
 	if(ctx->override_redirect) {
@@ -166,6 +166,8 @@ static void display_map_dashboard(struct display_x11* ctx) {
 			ctx->window, XCB_CURRENT_TIME));
 #endif
 	}
+
+	xcb_flush(ctx->connection);
 }
 
 void display_unmap_dashboard(struct display_x11* ctx) {
@@ -180,8 +182,8 @@ void display_unmap_dashboard(struct display_x11* ctx) {
 #endif
 
 	xcb_unmap_window(ctx->connection, ctx->window);
-	xcb_flush(ctx->connection);
 	ctx->dashboard = false;
+	xcb_flush(ctx->connection);
 }
 
 static void send_expose_event(struct display_x11* ctx) {
@@ -208,12 +210,11 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 			if(ctx->dashboard) {
 				ui_draw(ctx->ui, ctx->surface, ctx->cr, ctx->width,
 					ctx->height, banner_none);
-				xcb_flush(ctx->connection);
 			} else if(ctx->banner != banner_none) {
 				ui_draw(ctx->ui, ctx->surface, ctx->cr, ctx->width,
 					ctx->height, ctx->banner);
-				xcb_flush(ctx->connection);
 			}
+			xcb_flush(ctx->connection);
 			break;
 		case XCB_CONFIGURE_NOTIFY: {
 			xcb_configure_notify_event_t* ev = (xcb_configure_notify_event_t*) gev;
@@ -228,6 +229,9 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 			if(ctx->dashboard && ui_key(ctx->ui, keycode)) {
 				display_unmap_dashboard(ctx);
 			}
+			// TODO: don't always do this. ui should be able to trigger
+			// it i guess
+			send_expose_event(ctx);
 			break;
 		} case XCB_CLIENT_MESSAGE: {
 			xcb_client_message_event_t* ev = (xcb_client_message_event_t*) gev;
@@ -249,17 +253,6 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 	}
 }
 
-
-static void read_xcb(struct ml_io* io, unsigned revents) {
-	(void) revents;
-	struct display_x11* ctx = (struct display_x11*) ml_io_get_data(io);
-
-	xcb_generic_event_t* gev;
-	while((gev = xcb_poll_for_event(ctx->connection))) {
-		process(ctx, gev);
-		free(gev);
-	}
-}
 
 static void read_timer(struct ml_timer* timer, const struct timespec* time) {
 	(void) time;
@@ -313,8 +306,9 @@ static void show_banner(struct display* base, enum banner banner) {
 
 static void destroy(struct display* base) {
 	struct display_x11* dpy = (struct display_x11*) base;
+	if(dpy->pending) free(dpy->pending);
 	if(dpy->timer) ml_timer_destroy(dpy->timer);
-	if(dpy->io) ml_io_destroy(dpy->io);
+	if(dpy->source) ml_custom_destroy(dpy->source);
 	if(dpy->cr) cairo_destroy(dpy->cr);
 	if(dpy->surface) cairo_surface_destroy(dpy->surface);
 	if(dpy->connection) {
@@ -340,6 +334,52 @@ static const struct display_impl x11_impl = {
 	.show_banner = show_banner,
 };
 
+static unsigned fd_query(struct ml_custom* c, struct pollfd* fds,
+		unsigned n_fds, int* timeout) {
+	struct display_x11* dpy = (struct display_x11*) ml_custom_get_data(c);
+
+	if(n_fds > 0) {
+		fds[0].fd = xcb_get_file_descriptor(dpy->connection),
+		fds[0].events = ml_io_input;
+	}
+
+	*timeout = -1;
+	if(!dpy->pending) {
+		// important that there is no reading (i.e. basically any
+		// call to xcb, xcb_flush as well) after this
+		dpy->pending = xcb_poll_for_queued_event(dpy->connection);
+	}
+	if(dpy->pending) {
+		*timeout = 0;
+	}
+
+	return 1;
+}
+
+static void fd_dispatch(struct ml_custom* c, struct pollfd* fds, unsigned n_fds) {
+	(void) fds;
+	(void) n_fds;
+	struct display_x11* dpy = (struct display_x11*) ml_custom_get_data(c);
+	if(dpy->pending) {
+		process(dpy, dpy->pending);
+		free(dpy->pending);
+		dpy->pending = NULL;
+	}
+
+	xcb_generic_event_t* gev;
+	while((gev = xcb_poll_for_event(dpy->connection))) {
+		process(dpy, gev);
+		free(gev);
+	}
+
+	xcb_flush(dpy->connection);
+}
+
+static const struct ml_custom_impl custom_impl = {
+	.query = fd_query,
+	.dispatch = fd_dispatch
+};
+
 struct display* display_create_x11(struct ui* ui) {
 	struct display_x11* ctx = calloc(1, sizeof(*ctx));
 	ctx->display.impl = &x11_impl;
@@ -354,10 +394,8 @@ struct display* display_create_x11(struct ui* ui) {
 		goto err;
 	}
 
-	// make sure connection is polled in main loop for events
-	ctx->io = ml_io_new(dui_mainloop(), xcb_get_file_descriptor(ctx->connection),
-		ml_io_input, read_xcb);
-	ml_io_set_data(ctx->io, ctx);
+	ctx->source = ml_custom_new(dui_mainloop(), &custom_impl);
+	ml_custom_set_data(ctx->source, ctx);
 
 	ctx->screen = xcb_setup_roots_iterator(xcb_get_setup(ctx->connection)).data;
 
@@ -504,6 +542,7 @@ struct display* display_create_x11(struct ui* ui) {
 	// init timer for banner timeout
 	ctx->timer = ml_timer_new(dui_mainloop(), NULL, read_timer);
 	ml_timer_set_data(ctx->timer, ctx);
+	xcb_flush(ctx->connection);
 
 	return &ctx->display;
 

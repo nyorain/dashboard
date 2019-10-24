@@ -1,5 +1,4 @@
 #define _POSIX_C_SOURCE 200809L
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -162,4 +161,8 @@ bool mod_audio_get_muted(struct mod_audio* mod) {
 	int muted;
 	snd_mixer_selem_get_playback_switch(mod->elem, 0, &muted);
 	return muted == 0;
+}
+
+void mod_audio_cycle_output(struct mod_audio* mod) {
+	printf("mod_audio_cycle_output: not implemented for alsa\n");
 }
