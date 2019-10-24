@@ -42,4 +42,7 @@ static const unsigned banner_height = 60;
 // size of the dashboard
 static const unsigned start_width = 800;
 static const unsigned start_height = 500;
-
+static const unsigned banner_margin_x = 20;
+static const unsigned banner_margin_y = 20;
+// how long the banner will stay visible, in seconds
+static const unsigned banner_time = 2;

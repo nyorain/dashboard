@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 201710L
+#define _POSIX_C_SOURCE 200809L
 
 #include "config.h"
 #ifdef WITH_NOTES

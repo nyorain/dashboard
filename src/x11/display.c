@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 201710L
+#define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,12 +54,6 @@ struct display_x11 {
 	struct ml_timer* timer;
 	unsigned width, height;
 };
-
-// margin of the banner on screen
-static const unsigned banner_margin_x = 20;
-static const unsigned banner_margin_y = 20;
-// how long the banner will stay visible, in seconds
-static const unsigned banner_time = 2;
 
 // Simple macro that checks cookies returned by xcb *_checked calls
 // useful when something triggers and xcb error
@@ -250,7 +244,7 @@ static void show_banner(struct display* base, enum banner banner) {
 
 	if(dpy->banner == banner_none) {
 		// title
-		const char* title = "notification";
+		const char* title = "dui banner";
 		xcb_ewmh_set_wm_name(&dpy->ewmh, dpy->window, strlen(title), title);
 		xcb_map_window(dpy->connection, dpy->window);
 		configure_window(dpy,

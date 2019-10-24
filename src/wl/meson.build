@@ -62,7 +62,7 @@ if found_wl
 		wayland_client,
 	]
 
-	dui_src += files('display.c')
+	dui_src += files('display.c', 'pool-buffer.c')
 endif
 
 conf_data.set10('WITH_WL', found_wl)

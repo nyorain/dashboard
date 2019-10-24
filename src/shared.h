@@ -28,3 +28,4 @@ struct modules {
 	struct mod_brightness* brightness;
 	struct mod_power* power;
 };
+
