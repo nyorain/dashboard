@@ -6,8 +6,11 @@
 	  and stuff and redraw when mapped again)
 - [x] add battery module for laptop
 	- [x] battery doesn't have to update while open
-- [ ] refresh time in dashboard. Probably best done via timerfd/
+- [ ] refresh displayed time in dashboard. Probably best done via timerfd/
       timeout tracking in main loop?
+	- [ ] just refreshing it every 60 seconds isn't enough.
+	      should be more procise. Proably possible with time/date
+		  functions from c/posix though
 - [ ] better layout. Instead of hardcoding all positions, define it via
       boxes, margins, paddings and borders i guess?
 	- [ ] allow click events? clicking on date/time gives calendar,
@@ -16,11 +19,16 @@
 		  [probably not worth it, who needs the mouse anyways?]
 	- [ ] get more design inspiration on /r/unixporn
 	      pretty sure there are some dashboard-like setups already
-- [ ] first-class native wayland support via layer shell
-	- [ ] factor display code out into seperate file
-	- [ ] we can probably re-use some utility from swaybg (pool-buffer)
+- first-class native wayland support via layer shell
+	- [x] factor display code out into seperate file
+	- [x] we can probably re-use some utility from swaybg (pool-buffer)
+	- [ ] find out why banner surface doesn't work with wlr
+	      pretty sure it's a bug in wlr/sway though, maybe just report?
+		  if not fixed/can't find it: workaround by simply destroying
+		  the layer surface every time the window is hidden
 	- [ ] later: include output management
-- [ ] allow to remove note items from the dashboard (e.g. tab + enter
+	- [ ] support keyboard input, foward to ui
+- [x] allow to remove note items from the dashboard (e.g. tab + enter
       or vim j/k or c-n/c-p bindings + enter i guess)
 	- [ ] add some way to add notes? [later, not important atm]
 	      requires keyboard input support (xkbcommon), probably not worth
@@ -46,6 +54,20 @@
 	      isn't noticed correctly anymore.
 		  Could maybe be fixed without using pulseaudio though
 	- [ ] best solution probably: pulse audio backend
+- more modules
+	- [ ] number of github notifications
+	      just show it in dashboard for now (async curl request to github api),
+		  later on we automatically check with a timeout.
+		  But if a new notification comes, leave the notification display
+		  to notify-send (and the corresponding server)
+	- [ ] mails?
+	- [ ] show items from daily/weekly notes?
+	- [ ] something about calendar/more reminders?
+	- [ ] something about weather?
+	- [ ] some random modules showing suggestions/random stuff?
+- [ ] in dummy implementations: assert that they are not used?
+      currently the functions are just no-ops but if they are ever called,
+	  it's clearly an error. Maybe assert(false && ...)?
 
 Not sure if useful for this project or seperate project:
 there probably already is something for this i guess.

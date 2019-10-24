@@ -5,6 +5,7 @@
 #include <poll.h>
 #include <string.h>
 #include <assert.h>
+#include <limits.h>
 #include <errno.h>
 #include <wayland-client.h>
 #include <wayland-client-protocol.h>
@@ -148,7 +149,7 @@ static void draw(struct display_wl* dpy) {
 		wl_callback_add_listener(dpy->frame_callback, &frame_callback_listener, dpy);
 	}
 
-	wl_surface_damage_buffer(dpy->surface, 0, 0, INT32_MAX, INT32_MAX);
+	wl_surface_damage(dpy->surface, 0, 0, INT32_MAX, INT32_MAX);
 	wl_surface_commit(dpy->surface);
 }
 
@@ -244,7 +245,7 @@ static void layer_surface_configure(void *data,
 	dpy->height = height;
 	dpy->configured = true;
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
-	redraw(&dpy->base, banner_none);
+	refresh(dpy);
 }
 
 static void layer_surface_closed(void *data,
@@ -259,17 +260,17 @@ static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 	.closed = layer_surface_closed,
 };
 
-// TODO: version numbers
+// TODO: correct version numbers
 static void handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version) {
 	(void) version;
 	struct display_wl *dpy = data;
-	if (strcmp(interface, wl_compositor_interface.name) == 0) {
+	if(strcmp(interface, wl_compositor_interface.name) == 0) {
 		dpy->compositor = wl_registry_bind(registry, name,
 			&wl_compositor_interface, 4);
-	} else if (strcmp(interface, wl_shm_interface.name) == 0) {
+	} else if(strcmp(interface, wl_shm_interface.name) == 0) {
 		dpy->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
-	} else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
+	} else if(strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
 		dpy->layer_shell = wl_registry_bind(registry, name,
 			&zwlr_layer_shell_v1_interface, 1);
 	}

@@ -9,7 +9,9 @@
 #include <errno.h>
 #include <unistd.h>
 #include <cairo/cairo.h>
+#include <linux/input-event-codes.h>
 #include "shared.h"
+#include "display.h"
 #include "audio.h"
 #include "music.h"
 #include "power.h"
@@ -20,6 +22,9 @@
 
 struct ui {
 	struct modules* modules;
+	unsigned notes_count;
+	const struct note* notes;
+	unsigned active_note;
 };
 
 static const char* music_state_symbol(int state) {
@@ -67,6 +72,8 @@ static void draw_dashboard(struct ui* ui, cairo_surface_t* surface,
 	cairo_set_source_rgba(cr, 0.1, 0.1, 0.1, 0.6);
 	cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
 	cairo_paint(cr);
+
+	cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 
 	// date & time
 	time_t t = time(NULL);
@@ -198,13 +205,27 @@ static void draw_dashboard(struct ui* ui, cairo_surface_t* surface,
 
 	// notes
 	if(modules->notes) {
-		unsigned count;
-		const char** notes = mod_notes_get(modules->notes, &count);
+		ui->notes = mod_notes_get(modules->notes, &ui->notes_count);
+		if(ui->notes_count > 0 && ui->active_note >= ui->notes_count) {
+			ui->active_note = ui->notes_count - 1;
+		}
+
 		float y = 300.0;
-		for(unsigned i = 0u; i < count; ++i) {
-			// printf("node: %s (%d)\n", buf, len);
+		for(unsigned i = 0u; i < ui->notes_count; ++i) {
+			// TODO: shorten text if it doesn't fit.
+			// like it's done in the music banner
+			if(i == ui->active_note) {
+				cairo_text_extents_t extents;
+				cairo_text_extents(cr, ui->notes[i].string, &extents);
+				cairo_rectangle(cr, 20.0, y - 20, extents.width + 20, 30);
+				// cairo_rectangle(cr, 20.0, y - 20, width - 40, 30);
+				cairo_set_source_rgba(cr, 0.2, 0.2, 0.3, 0.5);
+				cairo_fill(cr);
+			}
+
 			cairo_move_to(cr, 32.0, y);
-			cairo_show_text(cr, notes[i]);
+			cairo_set_source_rgb(cr, 1, 1, 1);
+			cairo_show_text(cr, ui->notes[i].string);
 
 			y += 35;
 			if(y > 480) {
@@ -337,6 +358,48 @@ struct ui* ui_create(struct modules* modules) {
 	struct ui* ui = calloc(1, sizeof(*ui));
 	ui->modules = modules;
 	return ui;
+}
+
+bool ui_key(struct ui* ui, unsigned keycode) {
+	switch(keycode) {
+		case KEY_UP:
+		case KEY_K:
+			if(ui->active_note > 0) {
+				--ui->active_note;
+			}
+			break;
+		case KEY_DOWN:
+		case KEY_J:
+			if(ui->active_note < ui->notes_count + 1) {
+				++ui->active_note;
+			}
+			break;
+		case KEY_ENTER:
+		case KEY_E:
+			if(ui->modules->notes && ui->notes_count) {
+				mod_notes_open(ui->modules->notes, ui->notes[ui->active_note].id);
+				return true;
+			}
+			break;
+		case KEY_DELETE:
+		// case KEY_D:
+			if(ui->modules->notes && ui->notes_count) {
+				mod_notes_delete(ui->modules->notes, ui->notes[ui->active_note].id);
+			}
+			break;
+		case KEY_A:
+			if(ui->modules->notes && ui->notes_count) {
+				mod_notes_archive(ui->modules->notes, ui->notes[ui->active_note].id);
+			}
+			break;
+		case KEY_Q:
+		case KEY_ESC:
+			return true;
+		default:
+			break;
+	}
+
+	return false;
 }
 
 void ui_destroy(struct ui* ui) {

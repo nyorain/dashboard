@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include "banner.h"
 
 typedef struct _cairo_surface cairo_surface_t;
@@ -20,6 +21,7 @@ void ui_draw(struct ui*, cairo_surface_t*, cairo_t*,
 		unsigned width, unsigned height, enum banner);
 
 // Passes the given pressed key to the ui.
-// The key is a linux key code.
-void ui_key(struct ui*, unsigned);
+// The key is a linux key code. Returns whether the dashboard should
+// be closed.
+bool ui_key(struct ui*, unsigned);
 

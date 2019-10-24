@@ -24,6 +24,8 @@
 #include "display.h"
 #include "ui.h"
 
+#define GRAB_KEYBOARD 0
+
 struct display_x11 {
 	struct display display;
 	struct ui* ui;
@@ -75,6 +77,10 @@ static void configure_window(struct display_x11* ctx, int x, int y,
 			XCB_CONFIG_WINDOW_WIDTH |
 			XCB_CONFIG_WINDOW_HEIGHT;
 		xcb_configure_window(ctx->connection, ctx->window, mask, values);
+
+		xcb_icccm_wm_hints_t wmhints;
+		xcb_icccm_wm_hints_set_input(&wmhints, focus);
+		xcb_icccm_set_wm_hints(ctx->connection, ctx->window, &wmhints);
 
 		// if(focus) {
 		// 	xcb_set_input_focus(ctx->connection, XCB_NONE, ctx->window,
@@ -128,12 +134,50 @@ static void display_map_dashboard(struct display_x11* ctx) {
 
 	xcb_flush(ctx->connection);
 	ctx->dashboard = true;
+
+	if(ctx->override_redirect) {
+#if GRAB_KEYBOARD
+		bool success = false;
+
+		// try 1000 times to grab keyboard with 1ms timeouts in between (1s)
+		// might be needed if a key is currently pressed
+		for(int i = 0u; i < 1000; ++i) {
+			xcb_grab_keyboard_cookie_t cookie = xcb_grab_keyboard(ctx->connection,
+				1, ctx->window, XCB_CURRENT_TIME,
+				XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+			xcb_grab_keyboard_reply_t* reply = xcb_grab_keyboard_reply(
+				ctx->connection, cookie, NULL);
+
+			if(reply && reply->status == XCB_GRAB_STATUS_SUCCESS) {
+				success = true;
+				break;
+			}
+			free(reply);
+
+			struct timespec tsleep = { .tv_nsec = 1000 * 1000 };
+			nanosleep(&tsleep, NULL);
+		}
+
+		if(!success) {
+			printf("Failed to grab keyboard\n");
+		}
+#else
+		XCB_CHECK(xcb_set_input_focus_checked(ctx->connection, XCB_INPUT_FOCUS_NONE,
+			ctx->window, XCB_CURRENT_TIME));
+#endif
+	}
 }
 
 void display_unmap_dashboard(struct display_x11* ctx) {
 	if(!ctx->dashboard) {
 		return;
 	}
+
+#if GRAB_KEYBOARD
+	if(ctx->override_redirect) {
+		XCB_CHECK(xcb_ungrab_keyboard_checked(ctx->connection, XCB_CURRENT_TIME));
+	}
+#endif
 
 	xcb_unmap_window(ctx->connection, ctx->window);
 	xcb_flush(ctx->connection);
@@ -180,7 +224,8 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 			break;
 		} case XCB_KEY_PRESS: {
 			xcb_key_press_event_t* ev = (xcb_key_press_event_t*) gev;
-			if((ev->detail - 8) == KEY_ESC) {
+			unsigned keycode = ev->detail - 8;
+			if(ctx->dashboard && ui_key(ctx->ui, keycode)) {
 				display_unmap_dashboard(ctx);
 			}
 			break;
