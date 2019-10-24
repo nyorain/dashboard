@@ -9,6 +9,7 @@
 #include <alloca.h>
 #include <alsa/asoundlib.h>
 #include <pthread.h>
+#include <mainloop.h>
 #include "shared.h"
 #include "audio.h"
 #include "display.h"
@@ -18,6 +19,7 @@ struct mod_audio {
 	snd_mixer_t* handle;
 	snd_mixer_elem_t* elem;
 	struct display* dpy;
+	struct ml_custom* source;
 };
 
 static int elem_callback(snd_mixer_elem_t* elem, unsigned int mask){
@@ -29,12 +31,41 @@ static int elem_callback(snd_mixer_elem_t* elem, unsigned int mask){
 	return 0;
 }
 
-static void volume_poll(int fd, unsigned revents, void* data) {
-	(void) fd;
-	(void) revents;
-	struct mod_audio* mod = (struct mod_audio*) data;
-	snd_mixer_handle_events(mod->handle);
+static unsigned source_query(struct ml_custom* c, struct pollfd* fds,
+		unsigned n_fds, int* timeout) {
+	struct mod_audio* mod = (struct mod_audio*) ml_custom_get_data(c);
+	int count = snd_mixer_poll_descriptors_count(mod->handle);
+	if(count < 0) {
+		printf("snd_mixer_poll_descriptors_count: %d\n", count);
+		return 0;
+	}
+
+	*timeout = -1;
+	if(n_fds > 0) {
+		unsigned uc = count;
+		n_fds = uc < n_fds ? uc : n_fds;
+		int count2 = snd_mixer_poll_descriptors(mod->handle, fds, n_fds);
+		assert((unsigned) count2 == n_fds);
+	}
+
+	return count;
 }
+
+static void source_dispatch(struct ml_custom* c, struct pollfd* fds,
+		unsigned n_fds) {
+	struct mod_audio* mod = (struct mod_audio*) ml_custom_get_data(c);
+	unsigned short revents;
+	snd_mixer_poll_descriptors_revents(mod->handle, fds, n_fds,
+		&revents);
+	if(revents) {
+		snd_mixer_handle_events(mod->handle);
+	}
+}
+
+static const struct ml_custom_impl custom_impl = {
+	.query = source_query,
+	.dispatch = source_dispatch,
+};
 
 struct mod_audio* mod_audio_create(struct display* dpy) {
 	static const char* card = "default";
@@ -90,12 +121,8 @@ struct mod_audio* mod_audio_create(struct display* dpy) {
 	snd_mixer_elem_set_callback_private(mod->elem, mod);
 	snd_mixer_elem_set_callback(mod->elem, elem_callback);
 
-	int count = snd_mixer_poll_descriptors_count(mod->handle);
-	struct pollfd* pfds = calloc(count, sizeof(*pfds));
-	assert(snd_mixer_poll_descriptors(mod->handle, pfds, count) == count);
-	for(int i = 0; i < count; ++i) {
-		add_poll_handler(pfds[i].fd, pfds[i].events, mod, volume_poll);
-	}
+	mod->source = ml_custom_new(dui_mainloop(), &custom_impl);
+	ml_custom_set_data(mod->source, mod);
 
 	return mod;
 
@@ -105,6 +132,9 @@ err:
 }
 
 void mod_audio_destroy(struct mod_audio* volume) {
+	if(volume->source) {
+		ml_custom_destroy(volume->source);
+	}
 	if(volume->handle) {
 		snd_mixer_close(volume->handle);
 	}

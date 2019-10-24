@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <mainloop.h>
 #include "shared.h"
 #include "display.h"
 #include "music.h"
@@ -23,17 +24,9 @@
 #include "notes.h"
 #include "ui.h"
 
-struct poll_handler {
-	pollfd_callback callback;
-	void* data;
-};
-
 struct context {
 	int fifo;
-
-	unsigned poll_count;
-	struct pollfd* pollfds;
-	struct poll_handler* poll_handler;
+	struct mainloop* mainloop;
 
 	bool showing_dashboard;
 
@@ -41,17 +34,6 @@ struct context {
 	struct display* display;
 	struct modules modules;
 } ctx = {0};
-
-// polls the given fds but in comparison to poll will not return
-// when this program receives a (non-terminating) signal
-static int poll_nosig(struct pollfd* fds, nfds_t nfds, int timeout) {
-	while(true) {
-		int ret = poll(fds, nfds, timeout);
-		if(ret != -1 || errno != EINTR) {
-			return ret;
-		}
-	}
-}
 
 // messages are simple strings
 // they are always expected to end with a newline
@@ -78,10 +60,10 @@ static void handle_msg(char* msg, unsigned length) {
 	}
 }
 
-static void fifo_read(int fd, unsigned revents, void* data) {
+static void fifo_read(struct ml_io* io, enum ml_io_flags revents) {
 	(void) revents;
-	(void) data;
 
+	int fd = ml_io_get_fd(io);
 	char buf[256];
 	int ret = read(fd, buf, sizeof(buf) - 1);
 	if(ret > 0) {
@@ -102,22 +84,13 @@ static void fifo_read(int fd, unsigned revents, void* data) {
 	}
 }
 
-void add_poll_handler(int fd, unsigned events, void* data,
-		pollfd_callback callback) {
-	unsigned c = ++ctx.poll_count;
-	ctx.poll_handler = realloc(ctx.poll_handler, c * sizeof(*ctx.poll_handler));
-	ctx.pollfds = realloc(ctx.pollfds, c * sizeof(*ctx.pollfds));
-
-	--c;
-	ctx.pollfds[c].fd = fd;
-	ctx.pollfds[c].events = events;
-	ctx.pollfds[c].revents = 0;
-
-	ctx.poll_handler[c].callback = callback;
-	ctx.poll_handler[c].data = data;
+struct mainloop* dui_mainloop(void) {
+	return ctx.mainloop;
 }
 
 int main() {
+	ctx.mainloop = mainloop_new();
+
 	// init daemon fifo
 	// EEXIST simply means that the file already exists. We just
 	// assume that it is a pipe from a previous process of this
@@ -139,7 +112,7 @@ int main() {
 		return EXIT_FAILURE;
 	}
 
-	add_poll_handler(ctx.fifo, POLLIN, NULL, fifo_read);
+	ml_io_new(ctx.mainloop, ctx.fifo, POLLIN, fifo_read);
 
 	// try to create all modules
 	ctx.ui = ui_create(&ctx.modules);
@@ -156,22 +129,11 @@ int main() {
 	}
 
 	while(true) {
-		int ret = poll_nosig(ctx.pollfds, ctx.poll_count, -1);
-		if(ret == -1) {
-			printf("poll failed: %s (%d)\n", strerror(errno), errno);
-			continue; // break here?
-		}
-
-		for(unsigned i = 0u; i < ctx.poll_count; ++i) {
-			if(ctx.pollfds[i].revents) {
-				ctx.poll_handler[i].callback(ctx.pollfds[i].fd,
-					ctx.pollfds[i].revents, ctx.poll_handler[i].data);
-				ctx.pollfds[i].revents = 0;
-			}
-		}
+		mainloop_iterate(ctx.mainloop);
 	}
 
-	// modules
+	// TODO: currently not reachable.
+	// Add exit command for daemon
 	if(ctx.modules.power) mod_power_destroy(ctx.modules.power);
 	if(ctx.modules.music) mod_music_destroy(ctx.modules.music);
 	if(ctx.modules.audio) mod_audio_destroy(ctx.modules.audio);
@@ -179,4 +141,5 @@ int main() {
 	if(ctx.modules.brightness) mod_brightness_destroy(ctx.modules.brightness);
 	if(ctx.display) display_destroy(ctx.display);
 	if(ctx.ui) ui_destroy(ctx.ui);
+	mainloop_destroy(ctx.mainloop);
 }

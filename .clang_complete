@@ -1,6 +1,0 @@
--std=c11
--I./src
--I./build
--I/usr/include/glib-2.0/
--I./build/dashboard@exe/
--Wno-unused-parameter

@@ -1,7 +1,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
+#include <poll.h>
+#include <limits.h>
 #include <playerctl/playerctl.h>
+#include <mainloop.h>
 #include "shared.h"
 #include "music.h"
 #include "display.h"
@@ -16,6 +19,7 @@ struct mod_music {
 	char songbuf[256]; // "artist - title"
 	PlayerctlPlayer* player; // selected player
 	int sid_metadata; // for signal disconnecting
+	struct ml_custom* glib_source;
 };
 
 static gboolean status_callback(PlayerctlPlayer* player,
@@ -180,22 +184,42 @@ static void player_vanished_callback(PlayerctlPlayerManager* manager,
 	}
 }
 
-static void dispatch(int fd, unsigned revents, void* data) {
-	// struct playerctl* pc = (struct playerctl*) data;
-	GMainContext* ctx = g_main_context_default();
-	GPollFD gfd;
-	gfd.fd = fd;
-	gfd.revents = revents;
-	g_main_context_check(ctx, 100000, &gfd, 1);
-	g_main_context_dispatch(ctx);
-
-	// prepare for next iteration
-	gint prio, timeout;
+static void glib_prepare(struct ml_custom* c) {
+	GMainContext* ctx = ml_custom_get_data(c);
+	gint prio;
 	g_main_context_prepare(ctx, &prio);
-	int res = g_main_context_query(ctx, prio, &timeout, &gfd, 1);
-	assert(res == 1);
-	assert(gfd.fd == fd);
 }
+
+// TODO: we depend here on the fact that pollfd and GPollFD have
+// the same memory layout. I'm not sure if this is actually guaranteed
+// to be true, they have the same members though (see pollfd as described
+// by posix) so a compiler that gives them randomly different layouts
+// would be really weird i guess? (maybe C even guarantees that
+// two structs with the same members must have the same layout?
+// strict aliasing could still mess with us here, during link-time
+// optimization or something?)
+//
+// we could otherwise make the custom userdata a cached GPollFD array
+// that is realloc'd when needed. Probably cleaner/more portable version
+static unsigned glib_query(struct ml_custom* c, struct pollfd* fds,
+		unsigned n_fds, int* timeout) {
+	const gint prio = INT_MAX;
+	GMainContext* ctx = ml_custom_get_data(c);
+	unsigned ret = g_main_context_query(ctx, prio, timeout, (GPollFD*) fds, n_fds);
+	return ret;
+}
+
+static void glib_dispatch(struct ml_custom* c, struct pollfd* fds, unsigned n_fds) {
+	GMainContext* ctx = ml_custom_get_data(c);
+	g_main_context_check(ctx, INT_MAX, (GPollFD*) fds, n_fds);
+	g_main_context_dispatch(ctx);
+}
+
+static const struct ml_custom_impl glib_custom_impl = {
+	.prepare = glib_prepare,
+	.query = glib_query,
+	.dispatch = glib_dispatch
+};
 
 struct mod_music* mod_music_create(struct display* dpy) {
 	GError* error = NULL;
@@ -236,24 +260,19 @@ struct mod_music* mod_music_create(struct display* dpy) {
 	// initial selection
 	select_player(pc);
 
-	// we don't want to use the glib main loop so we integrate
+	// we really don't want to use the glib main loop so we integrate
 	// it with ours.
-	// NOTE: really hacky atm. We assume that there is only one
-	// fd and that it never changes.
-	GMainContext* ctx = g_main_context_default();
-	gint prio, timeout;
-	g_main_context_acquire(ctx);
-	g_main_context_prepare(ctx, &prio);
+	GMainContext* gctx = g_main_context_default();
+	g_main_context_acquire(gctx);
 
-	GPollFD fd;
-	int res = g_main_context_query(ctx, prio, &timeout, &fd, 1);
-	assert(res == 1);
-	add_poll_handler(fd.fd, fd.events, pc, dispatch);
+	pc->glib_source = ml_custom_new(dui_mainloop(), &glib_custom_impl);
+	ml_custom_set_data(pc->glib_source, gctx);
 
 	return pc;
 }
 
 void mod_music_destroy(struct mod_music* pc) {
+	if(pc->glib_source) ml_custom_destroy(pc->glib_source);
 	if(pc->manager) g_object_unref(pc->manager);
 	free(pc);
 }

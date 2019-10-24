@@ -6,8 +6,8 @@
 #include <string.h>
 #include <assert.h>
 #include <time.h>
-#include <sys/poll.h>
 #include <mpd/client.h>
+#include <mainloop.h>
 #include "shared.h"
 #include "music.h"
 #include "display.h"
@@ -16,6 +16,7 @@
 struct mod_music {
 	struct display* dpy;
 	struct mpd_connection* connection;
+	struct ml_io* io;
 	char songbuf[256]; // "artist - title"
 	enum music_state state;
 	bool idle;
@@ -58,10 +59,9 @@ static void mpd_fill(struct mod_music* mpd) {
 	mpd_status_free(status);
 }
 
-static void mpd_read(int fd, unsigned revents, void* data) {
-	(void) fd;
+static void mpd_read(struct ml_io* io, enum ml_io_flags revents) {
 	(void) revents;
-	struct mod_music* mpd = (struct mod_music*) data;
+	struct mod_music* mpd = (struct mod_music*) ml_io_get_data(io);
 
 	if(mpd_run_noidle(mpd->connection) == MPD_IDLE_PLAYER) {
 		mpd_fill(mpd);
@@ -82,8 +82,9 @@ struct mod_music* mod_music_create(struct display* dpy) {
 	mpd_fill(mpd);
 
 	// add to poll list
-	add_poll_handler(mpd_connection_get_fd(mpd->connection), POLLIN,
-		mpd, mpd_read);
+	mpd->io = ml_io_new(dui_mainloop(), mpd_connection_get_fd(mpd->connection),
+		ml_io_input, mpd_read);
+	ml_io_set_data(mpd->io, mpd);
 
 	// start initial idling
 	mpd_send_idle_mask(mpd->connection, MPD_IDLE_PLAYER);
@@ -97,6 +98,9 @@ err:
 }
 
 void mod_music_destroy(struct mod_music* mpd) {
+	if(mpd->io) {
+		ml_io_destroy(mpd->io);
+	}
 	if(mpd->idle) {
 		mpd_run_noidle(mpd->connection);
 	}

@@ -90,7 +90,7 @@ static void draw_dashboard(struct ui* ui, cairo_surface_t* surface,
 	// small line
 	cairo_move_to(cr, 220, 140);
 	cairo_line_to(cr, width - 220, 140);
-	cairo_set_line_width(cr, 0.2);
+	cairo_set_line_width(cr, 0.4);
 	cairo_stroke(cr);
 
 	// music

@@ -1,4 +1,4 @@
-with_wl = get_option('with-wayland')
+with_wl = get_option('with-wl')
 
 # Generate client protocols
 # Taken from swaybg, https://github.com/swaywm/swaybg

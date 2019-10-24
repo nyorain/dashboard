@@ -11,7 +11,6 @@
 #include <unistd.h>
 #include <linux/input.h>
 #include <sys/poll.h>
-#include <sys/timerfd.h>
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_ewmh.h>
@@ -20,6 +19,7 @@
 #include <cairo/cairo.h>
 #include <cairo/cairo-xcb.h>
 
+#include <mainloop.h>
 #include "shared.h"
 #include "display.h"
 #include "ui.h"
@@ -50,8 +50,9 @@ struct display_x11 {
 	enum banner banner; // whether a banner is active.
 	bool dashboard; // dashboard currently mapped
 
+	struct ml_io* io;
+	struct ml_timer* timer;
 	unsigned width, height;
-	int timer;
 };
 
 // margin of the banner on screen
@@ -113,8 +114,9 @@ static void display_map_dashboard(struct display_x11* ctx) {
 	// disable banner timer if active
 	if(ctx->banner != banner_none) {
 		ctx->banner = banner_none;
-		struct itimerspec unused, disable = {0};
-		timerfd_settime(ctx->timer, 0, &disable, &unused);
+		struct timespec time;
+		clock_gettime(CLOCK_REALTIME, &time);
+		ml_timer_restart(ctx->timer, &time);
 		xcb_unmap_window(ctx->connection, ctx->window);
 	}
 
@@ -211,11 +213,9 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 }
 
 
-static void read_xcb(int fd, unsigned revents, void* data) {
-	(void) data;
-	(void) fd;
+static void read_xcb(struct ml_io* io, unsigned revents) {
 	(void) revents;
-	struct display_x11* ctx = (struct display_x11*) data;
+	struct display_x11* ctx = (struct display_x11*) ml_io_get_data(io);
 
 	xcb_generic_event_t* gev;
 	while((gev = xcb_poll_for_event(ctx->connection))) {
@@ -224,13 +224,9 @@ static void read_xcb(int fd, unsigned revents, void* data) {
 	}
 }
 
-static void read_timer(int fd, unsigned revents, void* data) {
-	(void) revents;
-	struct display_x11* ctx = (struct display_x11*) data;
-
-	uint64_t val;
-	int res = read(fd, &val, sizeof(val));
-	assert(res == 8);
+static void read_timer(struct ml_timer* timer, const struct timespec* time) {
+	(void) time;
+	struct display_x11* ctx = (struct display_x11*) ml_timer_get_data(timer);
 
 	// hide banner
 	ctx->banner = banner_none;
@@ -270,15 +266,18 @@ static void show_banner(struct display* base, enum banner banner) {
 
 	dpy->banner = banner;
 
-	// set timeout on timerfd to hide the banner
+	// set timeout on timer
 	// this will automatically override previously queued timers
-	struct itimerspec timer_unused, timer = {0};
-	timer.it_value.tv_sec = banner_time;
-	timerfd_settime(dpy->timer, 0, &timer, &timer_unused);
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	ts.tv_sec += banner_time;
+	ml_timer_restart(dpy->timer, &ts);
 }
 
 static void destroy(struct display* base) {
 	struct display_x11* dpy = (struct display_x11*) base;
+	if(dpy->timer) ml_timer_destroy(dpy->timer);
+	if(dpy->io) ml_io_destroy(dpy->io);
 	if(dpy->cr) cairo_destroy(dpy->cr);
 	if(dpy->surface) cairo_surface_destroy(dpy->surface);
 	if(dpy->connection) {
@@ -319,8 +318,9 @@ struct display* display_create_x11(struct ui* ui) {
 	}
 
 	// make sure connection is polled in main loop for events
-	add_poll_handler(xcb_get_file_descriptor(ctx->connection), POLLIN,
-		ctx, read_xcb);
+	ctx->io = ml_io_new(dui_mainloop(), xcb_get_file_descriptor(ctx->connection),
+		ml_io_input, read_xcb);
+	ml_io_set_data(ctx->io, ctx);
 
 	ctx->screen = xcb_setup_roots_iterator(xcb_get_setup(ctx->connection)).data;
 
@@ -464,14 +464,9 @@ struct display* display_create_x11(struct ui* ui) {
 		ctx->window, visualtype, ctx->width, ctx->height);
 	ctx->cr = cairo_create(ctx->surface);
 
-	// init timerfd for banner timeout
-	ctx->timer = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
-	if(ctx->timer < 0) {
-		printf("timerfd_create failed: %s (%d)\n", strerror(errno), errno);
-		goto err;
-	}
-
-	add_poll_handler(ctx->timer, POLLIN, ctx, read_timer);
+	// init timer for banner timeout
+	ctx->timer = ml_timer_new(dui_mainloop(), NULL, read_timer);
+	ml_timer_set_data(ctx->timer, ctx);
 
 	return &ctx->display;
 

@@ -25,6 +25,7 @@ cc = meson.get_compiler('c')
 dep_cairo = dependency('cairo')
 dep_threads = dependency('threads')
 dep_m = cc.find_library('m', required: false)
+dep_ml = dependency('posix_mainloop', fallback: ['ml', 'posix_mainloop_dep'])
 
 # modules
 dep_sqlite3 = dependency('sqlite3', required: get_option('with-notes'))
@@ -43,6 +44,7 @@ dui_deps = [
 	dep_cairo,
 	dep_threads,
 	dep_m,
+	dep_ml,
 ]
 
 # mod_music

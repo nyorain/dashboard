@@ -4,7 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/inotify.h>
-#include <sys/poll.h>
+#include <mainloop.h>
 #include "shared.h"
 
 struct handler {
@@ -15,15 +15,13 @@ struct handler {
 
 static struct {
 	int inotify;
-
+	struct ml_io* io;
 	unsigned count;
 	struct handler* handlers;
 } ctx = {0};
 
-static void poll_handler(int fd, unsigned revents, void* data) {
-	(void) fd;
+static void poll_handler(struct ml_io* io, unsigned revents) {
 	(void) revents;
-	(void) data;
 
 	char buffer[8192];
 	ssize_t nr;
@@ -55,7 +53,8 @@ int add_inotify_watch(const char* pathname, uint32_t mask,
 			return -1;
 		}
 
-		add_poll_handler(ctx.inotify, POLLIN, NULL, poll_handler);
+		ctx.io = ml_io_new(dui_mainloop(), ctx.inotify,
+			ml_io_input, poll_handler);
 	}
 
 	int wd = inotify_add_watch(ctx.inotify, pathname, mask);

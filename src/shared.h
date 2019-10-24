@@ -4,12 +4,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-typedef struct _cairo_surface cairo_surface_t;
-typedef struct _cairo cairo_t;
-
-typedef void(*pollfd_callback)(int fd, unsigned revents, void* data);
-void add_poll_handler(int fd, unsigned events, void* data,
-		pollfd_callback callback);
+struct mainloop;
+struct mainloop* dui_mainloop(void);
 
 struct inotify_event; // sys/inotify.h
 typedef void(*inotify_callback)(const struct inotify_event*, void* data);
