@@ -219,19 +219,22 @@ static void get_sink_info_cb(pa_context* c, const pa_sink_info* i,
 	if(i->state == PA_SINK_RUNNING || i->state == PA_SINK_IDLE) {
 		printf("active sink: %s, %d\n", i->name, i->index);
 		mod->sink_idx = i->index;
-		mod->muted = i->mute || pa_cvolume_is_muted(&i->volume);
-
+		bool mute = i->mute || pa_cvolume_is_muted(&i->volume);
 		uint64_t avg = pa_cvolume_avg(&i->volume);
 		unsigned p = (unsigned)((avg * 100 + (uint64_t)PA_VOLUME_NORM / 2) / (uint64_t)PA_VOLUME_NORM);
-		mod->volume = p;
 
-		// kinda hacky workaround needed due to the async model of pulse
-		// with this we prevent the first reload we do to show a banner/redraw
-		if(mod->initialized) {
-			display_redraw(mod->dpy, banner_volume);
-			display_show_banner(mod->dpy, banner_volume);
+		if(mute != mod->muted || mod->volume != p) {
+			mod->muted = mute;
+			mod->volume = p;
+
+			// kinda hacky workaround needed due to the async model of pulse
+			// with this we prevent the first reload we do to show a banner/redraw
+			if(mod->initialized) {
+				display_redraw(mod->dpy, banner_volume);
+				display_show_banner(mod->dpy, banner_volume);
+			}
+			mod->initialized = true;
 		}
-		mod->initialized = true;
 	}
 }
 

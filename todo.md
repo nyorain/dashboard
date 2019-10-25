@@ -19,6 +19,7 @@
 		  [probably not worth it, who needs the mouse anyways?]
 	- [ ] get more design inspiration on /r/unixporn
 	      pretty sure there are some dashboard-like setups already
+		  https://www.reddit.com/r/unixporn/comments/dmvcev/awesome_roundedk
 - first-class native wayland support via layer shell
 	- [x] factor display code out into seperate file
 	- [x] we can probably re-use some utility from swaybg (pool-buffer)

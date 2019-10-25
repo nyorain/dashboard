@@ -19,7 +19,7 @@ void mod_music_destroy(struct mod_music*);
 // Returns NULL if there is no current song (mpd is in stopped state).
 const char* mod_music_get_song(struct mod_music*);
 
-// Returns the current mpd state:
+// Returns the current mpd state.
 enum music_state mod_music_get_state(struct mod_music*);
 
 // Play the next/prev song in the current list.
