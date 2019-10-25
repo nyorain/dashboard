@@ -55,6 +55,12 @@ static void handle_msg(char* msg, unsigned length) {
 		if(ctx.modules.music) mod_music_toggle(ctx.modules.music);
 	} else if(strcmp(msg, "dashboard toggle") == 0) {
 		display_toggle_dashboard(ctx.display);
+	} else if(strcmp(msg, "audio cycle-output") == 0) {
+		if(ctx.modules.audio) mod_audio_cycle_output(ctx.modules.audio);
+	} else if(strcmp(msg, "audio up") == 0) {
+		if(ctx.modules.audio) mod_audio_add(ctx.modules.audio, 5);
+	} else if(strcmp(msg, "audio down") == 0) {
+		if(ctx.modules.audio) mod_audio_add(ctx.modules.audio, -5);
 	} else {
 		printf("Unknown message: '%s'\n", msg);
 	}

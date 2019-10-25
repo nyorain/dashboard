@@ -166,3 +166,7 @@ bool mod_audio_get_muted(struct mod_audio* mod) {
 void mod_audio_cycle_output(struct mod_audio* mod) {
 	printf("mod_audio_cycle_output: not implemented for alsa\n");
 }
+
+void mod_audio_add(struct mod_audio* mod, int percent) {
+	printf("mod_audio_add: not implemented for alsa\n");
+}

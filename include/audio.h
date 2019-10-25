@@ -16,3 +16,6 @@ bool mod_audio_get_muted(struct mod_audio*);
 
 // Cycles to the next audio output.
 void mod_audio_cycle_output(struct mod_audio*);
+
+// Adds the given percent value to the current volume
+void mod_audio_add(struct mod_audio*, int percent);

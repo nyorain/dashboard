@@ -6,6 +6,8 @@
 #include "mainloop.h"
 #include "audio.h"
 #include "shared.h"
+#include "display.h"
+#include "banner.h"
 
 // TODO: continue!
 // basically just implementing the functionality of pactl
@@ -13,6 +15,12 @@
 struct mod_audio {
 	struct display* dpy;
 	struct pa_mainloop_api pa_api;
+	struct pa_context* ctx;
+
+	bool initialized;
+	int sink_idx; // index of active sink
+	bool muted;
+	unsigned volume;
 };
 
 // paml_io
@@ -199,20 +207,92 @@ static const struct pa_mainloop_api pulse_mainloop_api = {
 	.quit = paml_quit,
 };
 
+// mod audio impl
+static void get_sink_info_cb(pa_context* c, const pa_sink_info* i,
+		int is_last, void* data) {
+	if(is_last) {
+		return;
+	}
+
+	assert(i);
+	struct mod_audio* mod = data;
+	if(i->state == PA_SINK_RUNNING || i->state == PA_SINK_IDLE) {
+		printf("active sink: %s, %d\n", i->name, i->index);
+		mod->sink_idx = i->index;
+		mod->muted = i->mute || pa_cvolume_is_muted(&i->volume);
+
+		uint64_t avg = pa_cvolume_avg(&i->volume);
+		unsigned p = (unsigned)((avg * 100 + (uint64_t)PA_VOLUME_NORM / 2) / (uint64_t)PA_VOLUME_NORM);
+		mod->volume = p;
+
+		// kinda hacky workaround needed due to the async model of pulse
+		// with this we prevent the first reload we do to show a banner/redraw
+		if(mod->initialized) {
+			display_redraw(mod->dpy, banner_volume);
+			display_show_banner(mod->dpy, banner_volume);
+		}
+		mod->initialized = true;
+	}
+}
+
+static void reload(struct mod_audio* mod) {
+	pa_operation* o = pa_context_get_sink_info_list(mod->ctx, get_sink_info_cb, mod);
+	assert(o);
+	pa_operation_unref(o);
+}
+
+static void get_server_info_cb(pa_context *c, const pa_server_info *i, void *cb) {
+	printf("default sink name: %s\n", i->default_sink_name);
+}
+
+static const char *subscription_event_type_to_string(pa_subscription_event_type_t t) {
+    switch (t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) {
+		case PA_SUBSCRIPTION_EVENT_NEW: return "new";
+		case PA_SUBSCRIPTION_EVENT_CHANGE: return "change";
+		case PA_SUBSCRIPTION_EVENT_REMOVE: return "remove";
+    }
+
+    return "unknown";
+}
+
+static const char *subscription_event_facility_to_string(pa_subscription_event_type_t t) {
+    switch (t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) {
+		case PA_SUBSCRIPTION_EVENT_SINK: return "sink";
+		case PA_SUBSCRIPTION_EVENT_SOURCE: return "source";
+		case PA_SUBSCRIPTION_EVENT_SINK_INPUT: return "sink-input";
+		case PA_SUBSCRIPTION_EVENT_SOURCE_OUTPUT: return "source-output";
+		case PA_SUBSCRIPTION_EVENT_MODULE: return "module";
+		case PA_SUBSCRIPTION_EVENT_CLIENT: return "client";
+		case PA_SUBSCRIPTION_EVENT_SAMPLE_CACHE: return "sample-cache";
+		case PA_SUBSCRIPTION_EVENT_SERVER: return "server";
+		case PA_SUBSCRIPTION_EVENT_CARD: return "card";
+    }
+
+    return "unknown";
+}
+
 static void pactx_subscribe_cb(pa_context* pactx,
-		pa_subscription_event_type_t t, uint32_t idx, void *userdata) {
-	printf("pulse event: type = %d, idx = %d\n", t, idx);
+		pa_subscription_event_type_t t, uint32_t idx, void* data) {
+	struct mod_audio* mod = data;
+	printf("pulse event: '%s' on '%s', %d\n",
+		subscription_event_type_to_string(t),
+        subscription_event_facility_to_string(t), idx);
+
+	if((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_CHANGE &&
+			(t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SINK) {
+		reload(mod);
+	}
 }
 
 static void pactx_state_cb(pa_context* pactx, void* data) {
+	struct mod_audio* mod = data;
 	int s = pa_context_get_state(pactx);
-	printf("pulse state: %d\n", s);
 	if(s != PA_CONTEXT_READY) {
 		return;
 	}
 
-	pa_operation *o = NULL;
-	pa_context_set_subscribe_callback(pactx, pactx_subscribe_cb, NULL);
+	pa_operation* o = NULL;
+	pa_context_set_subscribe_callback(pactx, pactx_subscribe_cb, mod);
 	o = pa_context_subscribe(pactx,
 		PA_SUBSCRIPTION_MASK_SINK|
 		PA_SUBSCRIPTION_MASK_SOURCE|
@@ -225,36 +305,48 @@ static void pactx_state_cb(pa_context* pactx, void* data) {
 		PA_SUBSCRIPTION_MASK_CARD, NULL, NULL);
 	assert(o);
 	pa_operation_unref(o);
+
+	o = pa_context_get_server_info(pactx, get_server_info_cb, mod);
+	assert(o);
+	pa_operation_unref(o);
+
+	reload(mod);
 }
 
 struct mod_audio* mod_audio_create(struct display* dpy) {
-	printf("audio create\n");
-	fflush(stdout);
-
 	struct mod_audio* mod = calloc(1, sizeof(*mod));
 	mod->dpy = dpy;
 
 	mod->pa_api = pulse_mainloop_api;
 	mod->pa_api.userdata = dui_mainloop();
-	pa_context* pactx = pa_context_new(&mod->pa_api, NULL);
-    pa_context_set_state_callback(pactx, pactx_state_cb, NULL);
+	mod->ctx = pa_context_new(&mod->pa_api, "dui");
+    pa_context_set_state_callback(mod->ctx, pactx_state_cb, mod);
 
-	if(pa_context_connect(pactx, NULL, 0, NULL) < 0) {
-        printf("pa_context_connect failed: %s", strerror(pa_context_errno(pactx)));
+	if(pa_context_connect(mod->ctx, NULL, 0, NULL) < 0) {
+        printf("pa_context_connect failed: %s", strerror(pa_context_errno(mod->ctx)));
 		mod_audio_destroy(mod);
 		return NULL;
     }
 
-	printf("audio create finished\n");
-	fflush(stdout);
 	return mod;
 }
 
 void mod_audio_destroy(struct mod_audio* mod) {
+	if(mod->ctx) pa_context_unref(mod->ctx);
 	free(mod);
 }
 
-unsigned mod_audio_get(struct mod_audio* m) { return 0; }
-bool mod_audio_get_muted(struct mod_audio* m) { return false; }
-void mod_audio_cycle_output(struct mod_audio* m) {}
+unsigned mod_audio_get(struct mod_audio* mod) {
+	return mod->volume;
+}
+bool mod_audio_get_muted(struct mod_audio* mod) {
+	return mod->muted;
+}
 
+void mod_audio_cycle_output(struct mod_audio* m) {
+	// TODO
+}
+
+void mod_audio_add(struct mod_audio* mod, int percent) {
+	// TODO
+}
