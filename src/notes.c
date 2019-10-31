@@ -153,9 +153,7 @@ const struct note* mod_notes_get(struct mod_notes* notes, unsigned* count) {
 	return notes->notes;
 }
 
-void mod_notes_open(struct mod_notes* m, unsigned id) {
-	(void) m;
-
+static void forkexec(const char* exec, char* const* args) {
 	// double fork since we don't actually want have anything to do
 	// with this process, we don't care about it.
 	// Give it to pid 1 instead.
@@ -172,16 +170,22 @@ void mod_notes_open(struct mod_notes* m, unsigned id) {
 			printf("(second) fork failed: %s (%d)\n", strerror(errno), errno);
 			_exit(EXIT_FAILURE);
 		} else if(pid == 0) {
-			char buf[64];
-			snprintf(buf, sizeof(buf), "nodes e %d", id);
-
-			const char* exec = "/usr/bin/termite";
-			execl(exec, exec, "-e", buf);
+			execv(exec, args);
 			printf("execvp failed: %s (%d)\n", strerror(errno), errno);
 			_exit(EXIT_FAILURE);
 		}
 		_exit(EXIT_SUCCESS);
 	}
+}
+
+void mod_notes_open(struct mod_notes* m, unsigned id) {
+	(void) m;
+
+	char buf[64];
+	snprintf(buf, sizeof(buf), "nodes e %d", id);
+	char* exec = "/usr/bin/termite";
+	char* args[] = {exec, "-e", buf, NULL};
+	forkexec(exec, args);
 }
 
 void mod_notes_delete(struct mod_notes* notes, unsigned id) {
@@ -204,6 +208,13 @@ void mod_notes_archive(struct mod_notes* notes, unsigned id) {
 	sqlite3_reset(notes->stmt_archive);
 }
 
+void mod_notes_create_note(struct mod_notes* m) {
+	char* nodes_exec = "nodes c -t db";
+	char* exec = "/usr/bin/termite";
+	char* args[] = {exec, "-e", nodes_exec, NULL};
+	forkexec(exec, args);
+}
+
 #else // WITH_NOTES
 
 #include <stdlib.h>
@@ -213,6 +224,7 @@ void mod_notes_destroy(struct mod_notes* m) {}
 void mod_notes_open(struct mod_notes* m, unsigned id) {}
 void mod_notes_delete(struct mod_notes* m, unsigned id) {}
 void mod_notes_archive(struct mod_notes* notes, unsigned id) {}
+void mod_notes_create_note(struct mod_notes* m) {}
 const struct note* mod_notes_get(struct mod_notes* m, unsigned* count) {
 	*count = 0;
 	return NULL;

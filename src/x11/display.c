@@ -214,7 +214,6 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 				ui_draw(ctx->ui, ctx->surface, ctx->cr, ctx->width,
 					ctx->height, ctx->banner);
 			}
-			xcb_flush(ctx->connection);
 			break;
 		case XCB_CONFIGURE_NOTIFY: {
 			xcb_configure_notify_event_t* ev = (xcb_configure_notify_event_t*) gev;

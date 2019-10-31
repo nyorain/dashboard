@@ -392,6 +392,12 @@ bool ui_key(struct ui* ui, unsigned keycode) {
 				mod_notes_archive(ui->modules->notes, ui->notes[ui->active_note].id);
 			}
 			break;
+		case KEY_C:
+			if(ui->modules->notes) {
+				mod_notes_create_note(ui->modules->notes);
+				return true;
+			}
+			break;
 		case KEY_Q:
 		case KEY_ESC:
 			return true;

@@ -16,9 +16,10 @@ struct mod_audio {
 	struct display* dpy;
 	struct pa_mainloop_api pa_api;
 	struct pa_context* ctx;
+	const char* default_sink;
+	int sink_idx; // index of active sink
 
 	bool initialized;
-	int sink_idx; // index of active sink
 	bool muted;
 	unsigned volume;
 };
@@ -216,8 +217,8 @@ static void get_sink_info_cb(pa_context* c, const pa_sink_info* i,
 
 	assert(i);
 	struct mod_audio* mod = data;
-	if(i->state == PA_SINK_RUNNING || i->state == PA_SINK_IDLE) {
-		printf("active sink: %s, %d\n", i->name, i->index);
+
+	if(mod->default_sink && strcmp(mod->default_sink, i->name) == 0) {
 		mod->sink_idx = i->index;
 		bool mute = i->mute || pa_cvolume_is_muted(&i->volume);
 		uint64_t avg = pa_cvolume_avg(&i->volume);
@@ -244,8 +245,24 @@ static void reload(struct mod_audio* mod) {
 	pa_operation_unref(o);
 }
 
-static void get_server_info_cb(pa_context *c, const pa_server_info *i, void *cb) {
+static void get_server_info_cb(pa_context *c, const pa_server_info *i, void *data) {
+	struct mod_audio* mod = data;
+	bool dreload = false;
+	if(mod->default_sink) {
+		if(strcmp(mod->default_sink, i->default_sink_name) == 0) {
+			return;
+		}
+
+		free((void*) mod->default_sink);
+		dreload = true;
+	}
+
+	mod->default_sink = strdup(i->default_sink_name);
 	printf("default sink name: %s\n", i->default_sink_name);
+
+	if(dreload) {
+		reload(mod);
+	}
 }
 
 static const char *subscription_event_type_to_string(pa_subscription_event_type_t t) {
