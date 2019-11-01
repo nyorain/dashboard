@@ -322,7 +322,7 @@ struct display* display_create_wl(struct ui* ui) {
 	dpy->surface = wl_compositor_create_surface(dpy->compositor);
 	dpy->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
 		dpy->layer_shell, dpy->surface, NULL,
-		ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "dashboard");
+		ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "dui");
 	zwlr_layer_surface_v1_add_listener(dpy->layer_surface,
 		&layer_surface_listener, dpy);
 

@@ -9,7 +9,7 @@
 - [ ] refresh displayed time in dashboard. Probably best done via timerfd/
       timeout tracking in main loop?
 	- [ ] just refreshing it every 60 seconds isn't enough.
-	      should be more procise. Proably possible with time/date
+	      should be more precise. Proably possible with time/date
 		  functions from c/posix though
 - [ ] better layout. Instead of hardcoding all positions, define it via
       boxes, margins, paddings and borders i guess?
@@ -43,7 +43,7 @@
 	      in a larger font and the artist in a second line?
 - [x] make modules compile-time options.
       shouldn't require to have sqlite/alsa/mpd installed
-- [ ] go all the way with renaming dashboard ->
+- [x] go all the way with renaming dashboard ->
       dui (desktop/dashboard ui/utility information; some mashup of those)
 - [ ] volume module: show current output/allow switching
       maybe allow to name them manually (e.g. headphone/speaker/monitor).
@@ -54,7 +54,7 @@
 	- [ ] current bug: when audio output is switched, volume change
 	      isn't noticed correctly anymore.
 		  Could maybe be fixed without using pulseaudio though
-	- [ ] best solution probably: pulse audio backend
+	- [x] best solution probably: pulse audio backend
 - more modules
 	- [ ] number of github notifications
 	      just show it in dashboard for now (async curl request to github api),
@@ -66,7 +66,7 @@
 	- [ ] something about calendar/more reminders?
 	- [ ] something about weather?
 	- [ ] some random modules showing suggestions/random stuff?
-- [ ] in dummy implementations: assert that they are not used?
+- [x] in dummy implementations: assert that they are not used?
       currently the functions are just no-ops but if they are ever called,
 	  it's clearly an error. Maybe assert(false && ...)?
 

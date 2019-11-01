@@ -28,11 +28,10 @@ struct context {
 	int fifo;
 	struct mainloop* mainloop;
 
-	bool showing_dashboard;
-
 	struct ui* ui;
 	struct display* display;
 	struct modules modules;
+	bool run;
 } ctx = {0};
 
 // messages are simple strings
@@ -61,6 +60,8 @@ static void handle_msg(char* msg, unsigned length) {
 		if(ctx.modules.audio) mod_audio_add(ctx.modules.audio, 5);
 	} else if(strcmp(msg, "audio down") == 0) {
 		if(ctx.modules.audio) mod_audio_add(ctx.modules.audio, -5);
+	} else if(strcmp(msg, "exit") == 0) {
+		ctx.run = false;
 	} else {
 		printf("Unknown message: '%s'\n", msg);
 	}
@@ -96,22 +97,31 @@ struct mainloop* dui_mainloop(void) {
 
 int main() {
 	ctx.mainloop = mainloop_new();
+	if(!ctx.mainloop) {
+		return EXIT_FAILURE;
+	}
 
 	// init daemon fifo
 	// EEXIST simply means that the file already exists. We just
 	// assume that it is a pipe from a previous process of this
 	// program.
-	const char* fifo_path = "/tmp/.pipe-dashboard";
+	const char* fifo_path = "/tmp/.dui-pipe";
 	int ret = mkfifo(fifo_path, 0666);
-	if(ret != 0 && errno != EEXIST) {
+	if(ret != 0) {
+		if(errno == EEXIST) {
+			printf("/tmp/.dui-pipe already exists. Another instance running?\n"
+				"In case a previous instance crashed, remove that file manually\n");
+			return 2;
+		}
+
 		printf("mkfifo failed: %s (%d)\n", strerror(errno), errno);
-		return EXIT_FAILURE;
+		return 3;
 	}
 
 	// we use O_RDWR here since that won't close our side of the pipe
 	// when a writer closes their side. We never write to it though.
 	// See the excellent post on https://stackoverflow.com/questions/15055065
-	// for details
+	// for details. Linux specific
 	ctx.fifo = open(fifo_path, O_NONBLOCK | O_CLOEXEC | O_RDWR);
 	if(ctx.fifo < 0) {
 		printf("open on fifo failed: %s (%d)\n", strerror(errno), errno);
@@ -122,30 +132,35 @@ int main() {
 
 	// try to create all modules
 	ctx.ui = ui_create(&ctx.modules);
+	if(!ctx.ui) {
+		return EXIT_FAILURE;
+	}
 	ctx.display = display_create(ctx.ui);
+	if(!ctx.display) {
+		return EXIT_FAILURE;
+	}
+
 	ctx.modules.music = mod_music_create(ctx.display);
 	ctx.modules.audio = mod_audio_create(ctx.display);
 	ctx.modules.notes = mod_notes_create(ctx.display);
 	ctx.modules.brightness = mod_brightness_create(ctx.display);
 	ctx.modules.power = mod_power_create(ctx.display);
 
-	// critical modules
-	if(!ctx.display) {
-		return EXIT_FAILURE;
-	}
-
-	while(true) {
+	ctx.run = true;
+	while(ctx.run) {
 		mainloop_iterate(ctx.mainloop);
 	}
 
-	// TODO: currently not reachable.
-	// Add exit command for daemon
+	if(unlink(fifo_path) < 0) {
+		printf("unlink failed: %s (%d)\n", strerror(errno), errno);
+	}
+
 	if(ctx.modules.power) mod_power_destroy(ctx.modules.power);
 	if(ctx.modules.music) mod_music_destroy(ctx.modules.music);
 	if(ctx.modules.audio) mod_audio_destroy(ctx.modules.audio);
 	if(ctx.modules.notes) mod_notes_destroy(ctx.modules.notes);
 	if(ctx.modules.brightness) mod_brightness_destroy(ctx.modules.brightness);
-	if(ctx.display) display_destroy(ctx.display);
-	if(ctx.ui) ui_destroy(ctx.ui);
+	display_destroy(ctx.display);
+	ui_destroy(ctx.ui);
 	mainloop_destroy(ctx.mainloop);
 }

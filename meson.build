@@ -1,5 +1,5 @@
 project(
-	'dashboard',
+	'dui',
 	'c',
 	version: '0.1.0',
 	license: 'MIT',
@@ -95,7 +95,7 @@ configure_file(output: 'config.h',
 	configuration: conf_data
 )
 
-executable('dashboard',
+executable('dui',
 	dui_src,
 	include_directories: dui_inc,
 	dependencies: dui_deps,

@@ -124,6 +124,12 @@ static void display_map_dashboard(struct display_x11* ctx) {
 	xcb_ewmh_set_wm_name(&ctx->ewmh, ctx->window, strlen(title), title);
 	xcb_map_window(ctx->connection, ctx->window);
 
+	// initial drawing.
+	// we will probably redraw when getting an expose/map notify
+	// but this way we don't have an initial delay
+	ui_draw(ctx->ui, ctx->surface, ctx->cr, ctx->width,
+		ctx->height, banner_none);
+
 	// TODO: don't hardcode center of screen to 1920x1080 res
 	// instead use xcb_get_geometry (once, during initialization)
 	configure_window(ctx,
@@ -205,7 +211,9 @@ static void send_expose_event(struct display_x11* ctx) {
 
 void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 	switch(gev->response_type & 0x7f) {
-		case XCB_MAP_NOTIFY:
+		// NOTE: could re-enable that but we currently draw the window
+		// initially when mapping it to prevent any delay
+		// case XCB_MAP_NOTIFY:
 		case XCB_EXPOSE:
 			if(ctx->dashboard) {
 				ui_draw(ctx->ui, ctx->surface, ctx->cr, ctx->width,
@@ -288,7 +296,12 @@ static void show_banner(struct display* base, enum banner banner) {
 			1920 - banner_width - banner_margin_x,
 			1080 - banner_height - banner_margin_y,
 			banner_width, banner_height, false);
-		xcb_flush(dpy->connection);
+		dpy->width = banner_width;
+		dpy->height = banner_height;
+
+		// initial draw
+		ui_draw(dpy->ui, dpy->surface, dpy->cr, dpy->width,
+			dpy->height, banner);
 	} else {
 		send_expose_event(dpy);
 	}

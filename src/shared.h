@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <assert.h>
 
 struct mainloop;
 struct mainloop* dui_mainloop(void);
@@ -29,3 +30,7 @@ struct modules {
 	struct mod_power* power;
 };
 
+// Should be used in dummy implementations of modules (except create an destroy).
+// Their create functions always return NULL and therefore calling a function
+// with a dummy modules is a programming error.
+#define DUI_DUMMY_IMPL assert(false && "[%s:%d] Dummy implementation called!")

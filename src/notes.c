@@ -221,11 +221,12 @@ void mod_notes_create_note(struct mod_notes* m) {
 
 struct mod_notes* mod_notes_create(struct display* dpy) { return NULL; }
 void mod_notes_destroy(struct mod_notes* m) {}
-void mod_notes_open(struct mod_notes* m, unsigned id) {}
-void mod_notes_delete(struct mod_notes* m, unsigned id) {}
-void mod_notes_archive(struct mod_notes* notes, unsigned id) {}
-void mod_notes_create_note(struct mod_notes* m) {}
+void mod_notes_open(struct mod_notes* m, unsigned id) { DUI_DUMMY_IMPL; }
+void mod_notes_delete(struct mod_notes* m, unsigned id) { DUI_DUMMY_IMPL; }
+void mod_notes_archive(struct mod_notes* notes, unsigned id) { DUI_DUMMY_IMPL; }
+void mod_notes_create_note(struct mod_notes* m) { DUI_DUMMY_IMPL; }
 const struct note* mod_notes_get(struct mod_notes* m, unsigned* count) {
+	DUI_DUMMY_IMPL;
 	*count = 0;
 	return NULL;
 }
