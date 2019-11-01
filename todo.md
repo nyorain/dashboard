@@ -29,6 +29,8 @@
 		  the layer surface every time the window is hidden
 	- [ ] later: include output management
 	- [ ] support keyboard input, foward to ui
+- [ ] better error handling. Use wayland and xcb (critical) error checking
+      functions. e.g. terminate when x11 server/wayland compositor is gone
 - [x] allow to remove note items from the dashboard (e.g. tab + enter
       or vim j/k or c-n/c-p bindings + enter i guess)
 	- [ ] add some way to add notes? [later, not important atm]
@@ -36,7 +38,6 @@
 		  it for quite a while
 		  But when implemented, just add support for general node adding,
 		  not only [db] nodes. That could be quite useful...
-- [ ] add additional keyboard shortcuts?
 - [x] mpd notification: if the text doesn't fit into the
       notification window, use "..."
 	- [ ] better mpd notification layout? with the title displaying
@@ -52,8 +53,7 @@
 	  main loop approach.
 	  See https://github.com/pulseaudio/pulseaudio/blob/master/src/utils/pactl.c
 	- [ ] current bug: when audio output is switched, volume change
-	      isn't noticed correctly anymore.
-		  Could maybe be fixed without using pulseaudio though
+	      isn't noticed correctly anymore. Fix that for pulse
 	- [x] best solution probably: pulse audio backend
 - more modules
 	- [ ] number of github notifications

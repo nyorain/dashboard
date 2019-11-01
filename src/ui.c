@@ -62,8 +62,8 @@ static const char* banner_symbol(enum banner banner, struct modules* modules) {
 	}
 }
 
-static void draw_dashboard(struct ui* ui, cairo_surface_t* surface,
-		cairo_t* cr, unsigned width, unsigned height) {
+static void draw_dashboard(struct ui* ui, cairo_t* cr,
+		unsigned width, unsigned height) {
 	struct modules* modules = ui->modules;
 	char buf[256];
 	const char* sym;
@@ -233,15 +233,12 @@ static void draw_dashboard(struct ui* ui, cairo_surface_t* surface,
 			}
 		}
 	}
-
-	// finish
-	cairo_surface_flush(surface);
 }
 
-void ui_draw(struct ui* ui, cairo_surface_t* surface, cairo_t* cr,
+void ui_draw(struct ui* ui, cairo_t* cr,
 		unsigned width, unsigned height, enum banner banner) {
 	if(banner == banner_none) {
-		draw_dashboard(ui, surface, cr, width, height);
+		draw_dashboard(ui, cr, width, height);
 		return;
 	}
 
@@ -349,9 +346,6 @@ void ui_draw(struct ui* ui, cairo_surface_t* surface, cairo_t* cr,
 
 		cairo_show_text(cr, buf);
 	}
-
-	// finish
-	cairo_surface_flush(surface);
 }
 
 struct ui* ui_create(struct modules* modules) {

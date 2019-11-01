@@ -142,8 +142,9 @@ static void draw(struct display_wl* dpy) {
 		struct pool_buffer* buf = get_next_buffer(dpy->shm, dpy->buffers,
 			dpy->width, dpy->height);
 		assert(buf);
-		ui_draw(dpy->ui, buf->surface, buf->cairo, dpy->width, dpy->height,
+		ui_draw(dpy->ui, buf->cairo, dpy->width, dpy->height,
 			dpy->dashboard ? banner_none : dpy->banner);
+		cairo_surface_flush(buf->surface);
 		wl_surface_attach(dpy->surface, buf->buffer, 0, 0);
 		dpy->frame_callback = wl_surface_frame(dpy->surface);
 		wl_callback_add_listener(dpy->frame_callback, &frame_callback_listener, dpy);

@@ -68,43 +68,69 @@ struct display_x11 {
 		free(gerr); \
 	}}
 
-static void configure_window(struct display_x11* ctx, int x, int y,
+static void configure_window(struct display_x11* dpy, int x, int y,
 		unsigned width, unsigned height, bool focus) {
-	if(ctx->override_redirect) {
+	if(dpy->override_redirect) {
 		int32_t values[] = {x, y, width, height};
 		uint32_t mask =
 			XCB_CONFIG_WINDOW_X |
 			XCB_CONFIG_WINDOW_Y |
 			XCB_CONFIG_WINDOW_WIDTH |
 			XCB_CONFIG_WINDOW_HEIGHT;
-		xcb_configure_window(ctx->connection, ctx->window, mask, values);
+		xcb_configure_window(dpy->connection, dpy->window, mask, values);
 
 		xcb_icccm_wm_hints_t wmhints;
 		xcb_icccm_wm_hints_set_input(&wmhints, focus);
-		xcb_icccm_set_wm_hints(ctx->connection, ctx->window, &wmhints);
+		xcb_icccm_set_wm_hints(dpy->connection, dpy->window, &wmhints);
 
 		// if(focus) {
-		// 	xcb_set_input_focus(ctx->connection, XCB_NONE, ctx->window,
+		// 	xcb_set_input_focus(dpy->connection, XCB_NONE, dpy->window,
 		// 		XCB_CURRENT_TIME);
 		// }
 	} else {
 		xcb_icccm_wm_hints_t wmhints;
 		xcb_icccm_wm_hints_set_input(&wmhints, focus);
-		xcb_icccm_set_wm_hints(ctx->connection, ctx->window, &wmhints);
+		xcb_icccm_set_wm_hints(dpy->connection, dpy->window, &wmhints);
 
 		xcb_size_hints_t shints;
 		xcb_icccm_size_hints_set_position(&shints, 0, x, y);
 		xcb_icccm_size_hints_set_size(&shints, 0, width, height);
-		xcb_icccm_set_wm_size_hints(ctx->connection, ctx->window,
+		xcb_icccm_set_wm_size_hints(dpy->connection, dpy->window,
 			XCB_ATOM_WM_NORMAL_HINTS, &shints);
 
 		xcb_atom_t states[] = {
-			ctx->ewmh._NET_WM_STATE_ABOVE,
-			ctx->ewmh._NET_WM_STATE_STICKY,
+			dpy->ewmh._NET_WM_STATE_ABOVE,
+			dpy->ewmh._NET_WM_STATE_STICKY,
 		};
-		xcb_ewmh_set_wm_state(&ctx->ewmh, ctx->window,
+		xcb_ewmh_set_wm_state(&dpy->ewmh, dpy->window,
 			sizeof(states) / sizeof(states[0]), states);
 	}
+
+	// NOTE: not sure whether it could be problematic to call this here
+	// already instead of waiting for the corresponding configure
+	// event
+	dpy->width = width;
+	dpy->height = height;
+	cairo_xcb_surface_set_size(dpy->surface, dpy->width, dpy->height);
+}
+
+static void draw(struct display_x11* dpy) {
+	if(!dpy->dashboard && dpy->banner == banner_none) {
+		return;
+	}
+
+	// this whole group thing is basically copying
+	// the underlying cairo x11 surface doesn't use double buffering
+	// so we need it to avoid flickering
+	cairo_push_group(dpy->cr);
+	ui_draw(dpy->ui, dpy->cr, dpy->width, dpy->height, dpy->banner);
+
+	cairo_pop_group_to_source(dpy->cr);
+	cairo_set_operator(dpy->cr, CAIRO_OPERATOR_SOURCE);
+	cairo_paint(dpy->cr);
+	cairo_set_operator(dpy->cr, CAIRO_OPERATOR_OVER);
+
+	cairo_surface_flush(dpy->surface);
 }
 
 static void display_map_dashboard(struct display_x11* ctx) {
@@ -119,17 +145,6 @@ static void display_map_dashboard(struct display_x11* ctx) {
 		xcb_unmap_window(ctx->connection, ctx->window);
 	}
 
-	// title
-	const char* title = "dashboard";
-	xcb_ewmh_set_wm_name(&ctx->ewmh, ctx->window, strlen(title), title);
-	xcb_map_window(ctx->connection, ctx->window);
-
-	// initial drawing.
-	// we will probably redraw when getting an expose/map notify
-	// but this way we don't have an initial delay
-	ui_draw(ctx->ui, ctx->surface, ctx->cr, ctx->width,
-		ctx->height, banner_none);
-
 	// TODO: don't hardcode center of screen to 1920x1080 res
 	// instead use xcb_get_geometry (once, during initialization)
 	configure_window(ctx,
@@ -138,8 +153,14 @@ static void display_map_dashboard(struct display_x11* ctx) {
 		start_width, start_height, true);
 	ctx->width = start_width;
 	ctx->height = start_height;
-
 	ctx->dashboard = true;
+
+	// initial drawing to avoid undefined contents when first mapped
+	draw(ctx);
+
+	const char* title = "dashboard";
+	xcb_ewmh_set_wm_name(&ctx->ewmh, ctx->window, strlen(title), title);
+	xcb_map_window(ctx->connection, ctx->window);
 
 	if(ctx->override_redirect) {
 #if GRAB_KEYBOARD
@@ -215,20 +236,16 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 		// initially when mapping it to prevent any delay
 		// case XCB_MAP_NOTIFY:
 		case XCB_EXPOSE:
-			if(ctx->dashboard) {
-				ui_draw(ctx->ui, ctx->surface, ctx->cr, ctx->width,
-					ctx->height, banner_none);
-			} else if(ctx->banner != banner_none) {
-				ui_draw(ctx->ui, ctx->surface, ctx->cr, ctx->width,
-					ctx->height, ctx->banner);
-			}
+			draw(ctx);
 			break;
 		case XCB_CONFIGURE_NOTIFY: {
 			xcb_configure_notify_event_t* ev = (xcb_configure_notify_event_t*) gev;
-			cairo_xcb_surface_set_size(ctx->surface, ev->width, ev->height);
-			ctx->width = ev->width;
-			ctx->height = ev->height;
-			// printf("resize: %d %d\n", ctx->width, ctx->height);
+			if(ev->width != ctx->width || ev->height != ctx->height) {
+				cairo_xcb_surface_set_size(ctx->surface, ev->width, ev->height);
+				ctx->width = ev->width;
+				ctx->height = ev->height;
+				printf("resize: %d %d\n", ctx->width, ctx->height);
+			}
 			break;
 		} case XCB_KEY_PRESS: {
 			xcb_key_press_event_t* ev = (xcb_key_press_event_t*) gev;
@@ -288,20 +305,20 @@ static void show_banner(struct display* base, enum banner banner) {
 	}
 
 	if(dpy->banner == banner_none) {
-		// title
-		const char* title = "dui banner";
-		xcb_ewmh_set_wm_name(&dpy->ewmh, dpy->window, strlen(title), title);
-		xcb_map_window(dpy->connection, dpy->window);
 		configure_window(dpy,
 			1920 - banner_width - banner_margin_x,
 			1080 - banner_height - banner_margin_y,
 			banner_width, banner_height, false);
 		dpy->width = banner_width;
 		dpy->height = banner_height;
+		dpy->banner = banner;
 
-		// initial draw
-		ui_draw(dpy->ui, dpy->surface, dpy->cr, dpy->width,
-			dpy->height, banner);
+		// initial draw to avoid undefined contents when mapped
+		draw(dpy);
+
+		const char* title = "dui banner";
+		xcb_ewmh_set_wm_name(&dpy->ewmh, dpy->window, strlen(title), title);
+		xcb_map_window(dpy->connection, dpy->window);
 	} else {
 		send_expose_event(dpy);
 	}
