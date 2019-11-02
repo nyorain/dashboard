@@ -7,6 +7,7 @@
 
 struct mainloop;
 struct mainloop* dui_mainloop(void);
+void dui_exit(void);
 
 struct inotify_event; // sys/inotify.h
 typedef void(*inotify_callback)(const struct inotify_event*, void* data);

@@ -11,6 +11,7 @@
 #include <cairo/cairo.h>
 #include <linux/input-event-codes.h>
 #include "shared.h"
+#include "mainloop.h"
 #include "display.h"
 #include "audio.h"
 #include "music.h"
@@ -25,6 +26,8 @@ struct ui {
 	unsigned notes_count;
 	const struct note* notes;
 	unsigned active_note;
+	struct ml_timer* timer;
+	struct display* display;
 };
 
 static const char* music_state_symbol(int state) {
@@ -93,6 +96,13 @@ static void draw_dashboard(struct ui* ui, cairo_t* cr,
 	cairo_set_source_rgba(cr, 0.8, 0.8, 0.8, 0.8);
 	cairo_move_to(cr, 32.0, 105.0);
 	cairo_show_text(cr, buf);
+
+	// set timer to redraw dashboard when next minute happens
+	int seconds = 60 - tm_info.tm_sec;
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	ts.tv_sec += seconds;
+	ml_timer_restart(ui->timer, &ts);
 
 	// small line
 	cairo_move_to(cr, 220, 140);
@@ -348,9 +358,17 @@ void ui_draw(struct ui* ui, cairo_t* cr,
 	}
 }
 
+void timer_cb(struct ml_timer* timer, const struct timespec* time) {
+	(void) time;
+	struct ui* ui = ml_timer_get_data(timer);
+	display_redraw(ui->display, banner_none);
+}
+
 struct ui* ui_create(struct modules* modules) {
 	struct ui* ui = calloc(1, sizeof(*ui));
 	ui->modules = modules;
+	ui->timer = ml_timer_new(dui_mainloop(), NULL, timer_cb);
+	ml_timer_set_data(ui->timer, ui);
 	return ui;
 }
 
@@ -403,5 +421,12 @@ bool ui_key(struct ui* ui, unsigned keycode) {
 }
 
 void ui_destroy(struct ui* ui) {
+	if(ui->timer) {
+		ml_timer_destroy(ui->timer);
+	}
 	free(ui);
+}
+
+void ui_set_display(struct ui* ui, struct display* dpy) {
+	ui->display = dpy;
 }

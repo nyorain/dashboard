@@ -6,12 +6,14 @@
 typedef struct _cairo_surface cairo_surface_t;
 typedef struct _cairo cairo_t;
 struct modules;
+struct display;
 
 // draw
 struct ui;
 
 struct ui* ui_create(struct modules*);
 void ui_destroy(struct ui*);
+void ui_set_display(struct ui*, struct display*);
 
 // Draws the ui on the given cairo surface, with the given context for it.
 // If (banner == banner_none) will draw the dashboard, otherwise the

@@ -95,6 +95,10 @@ struct mainloop* dui_mainloop(void) {
 	return ctx.mainloop;
 }
 
+void dui_exit(void) {
+	ctx.run = false;
+}
+
 int main() {
 	ctx.mainloop = mainloop_new();
 	if(!ctx.mainloop) {
@@ -140,6 +144,7 @@ int main() {
 		return EXIT_FAILURE;
 	}
 
+	ui_set_display(ctx.ui, ctx.display);
 	ctx.modules.music = mod_music_create(ctx.display);
 	ctx.modules.audio = mod_audio_create(ctx.display);
 	ctx.modules.notes = mod_notes_create(ctx.display);

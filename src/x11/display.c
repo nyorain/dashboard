@@ -389,6 +389,16 @@ static void fd_dispatch(struct ml_custom* c, struct pollfd* fds, unsigned n_fds)
 	(void) fds;
 	(void) n_fds;
 	struct display_x11* dpy = (struct display_x11*) ml_custom_get_data(c);
+
+	// check for error
+	int err = xcb_connection_has_error(dpy->connection);
+	if(err != 0) {
+		printf("Critical xcb connection error (%d), dui will exit\n", err);
+		dui_exit();
+		return;
+	}
+
+	// dispatch events
 	if(dpy->pending) {
 		process(dpy, dpy->pending);
 		free(dpy->pending);

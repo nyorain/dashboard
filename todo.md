@@ -6,9 +6,9 @@
 	  and stuff and redraw when mapped again)
 - [x] add battery module for laptop
 	- [x] battery doesn't have to update while open
-- [ ] refresh displayed time in dashboard. Probably best done via timerfd/
+- [x] refresh displayed time in dashboard. Probably best done via timerfd/
       timeout tracking in main loop?
-	- [ ] just refreshing it every 60 seconds isn't enough.
+	- [x] just refreshing it every 60 seconds isn't enough.
 	      should be more precise. Proably possible with time/date
 		  functions from c/posix though
 - [ ] better layout. Instead of hardcoding all positions, define it via
@@ -23,13 +23,14 @@
 - first-class native wayland support via layer shell
 	- [x] factor display code out into seperate file
 	- [x] we can probably re-use some utility from swaybg (pool-buffer)
-	- [ ] find out why banner surface doesn't work with wlr
+	- [x] find out why banner surface doesn't work with wlr
 	      pretty sure it's a bug in wlr/sway though, maybe just report?
 		  if not fixed/can't find it: workaround by simply destroying
 		  the layer surface every time the window is hidden
+	- [x] support keyboard input, foward to ui
 	- [ ] later: include output management
-	- [ ] support keyboard input, foward to ui
-- [ ] better error handling. Use wayland and xcb (critical) error checking
+- [ ] output management on x11
+- [x] better error handling. Use wayland and xcb (critical) error checking
       functions. e.g. terminate when x11 server/wayland compositor is gone
 - [x] allow to remove note items from the dashboard (e.g. tab + enter
       or vim j/k or c-n/c-p bindings + enter i guess)
