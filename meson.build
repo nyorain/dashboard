@@ -101,3 +101,8 @@ executable('dui',
 	dependencies: dui_deps,
 	install: true
 )
+
+executable('dui-msg',
+	'src/dui_msg.c',
+	install: true
+)

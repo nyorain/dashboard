@@ -410,6 +410,9 @@ bool ui_key(struct ui* ui, unsigned keycode) {
 				return true;
 			}
 			break;
+		case KEY_F12:
+			dui_exit();
+			break;
 		case KEY_Q:
 		case KEY_ESC:
 			return true;

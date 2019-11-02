@@ -35,6 +35,9 @@ struct display_x11 {
 	xcb_colormap_t colormap;
 	xcb_window_t window;
 
+	xcb_window_t restore_focus;
+	uint8_t restore_focus_revert;
+
 	// whether window is using override redirect
 	// to make keyboard input work on override redirect windows
 	// we probably want to grab the keyboard.
@@ -82,11 +85,6 @@ static void configure_window(struct display_x11* dpy, int x, int y,
 		xcb_icccm_wm_hints_t wmhints;
 		xcb_icccm_wm_hints_set_input(&wmhints, focus);
 		xcb_icccm_set_wm_hints(dpy->connection, dpy->window, &wmhints);
-
-		// if(focus) {
-		// 	xcb_set_input_focus(dpy->connection, XCB_NONE, dpy->window,
-		// 		XCB_CURRENT_TIME);
-		// }
 	} else {
 		xcb_icccm_wm_hints_t wmhints;
 		xcb_icccm_wm_hints_set_input(&wmhints, focus);
@@ -189,8 +187,18 @@ static void display_map_dashboard(struct display_x11* ctx) {
 			printf("Failed to grab keyboard\n");
 		}
 #else
-		XCB_CHECK(xcb_set_input_focus_checked(ctx->connection, XCB_INPUT_FOCUS_NONE,
-			ctx->window, XCB_CURRENT_TIME));
+		xcb_get_input_focus_cookie_t cookie = xcb_get_input_focus(ctx->connection);
+		xcb_get_input_focus_reply_t* reply = xcb_get_input_focus_reply(ctx->connection, cookie, NULL);
+		if(!reply) {
+			printf("Failed to get current input focus\n");
+		} else {
+			ctx->restore_focus = reply->focus;
+			ctx->restore_focus_revert = reply->revert_to;
+			free(reply);
+
+			XCB_CHECK(xcb_set_input_focus_checked(ctx->connection,
+				XCB_INPUT_FOCUS_POINTER_ROOT, ctx->window, XCB_CURRENT_TIME));
+		}
 #endif
 	}
 
@@ -202,11 +210,17 @@ void display_unmap_dashboard(struct display_x11* ctx) {
 		return;
 	}
 
-#if GRAB_KEYBOARD
 	if(ctx->override_redirect) {
+#if GRAB_KEYBOARD
 		XCB_CHECK(xcb_ungrab_keyboard_checked(ctx->connection, XCB_CURRENT_TIME));
-	}
+#else
+		assert(ctx->restore_focus);
+		XCB_CHECK(xcb_set_input_focus_checked(ctx->connection,
+			ctx->restore_focus_revert, ctx->restore_focus,
+			XCB_CURRENT_TIME));
+		ctx->restore_focus = 0;
 #endif
+	}
 
 	xcb_unmap_window(ctx->connection, ctx->window);
 	ctx->dashboard = false;
@@ -252,10 +266,11 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 			unsigned keycode = ev->detail - 8;
 			if(ctx->dashboard && ui_key(ctx->ui, keycode)) {
 				display_unmap_dashboard(ctx);
+			} else {
+				// TODO: don't always do this. ui should be able to trigger
+				// it i guess
+				send_expose_event(ctx);
 			}
-			// TODO: don't always do this. ui should be able to trigger
-			// it i guess
-			send_expose_event(ctx);
 			break;
 		} case XCB_CLIENT_MESSAGE: {
 			xcb_client_message_event_t* ev = (xcb_client_message_event_t*) gev;

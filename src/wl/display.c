@@ -370,10 +370,14 @@ static void keyboard_leave_cb(void *data, struct wl_keyboard *wl_keyboard,
 static void keyboard_key_cb(void *data, struct wl_keyboard *wl_keyboard,
 		uint32_t serial, uint32_t time, uint32_t key, uint32_t state) {
 	// key += 8;
-	printf("key %d %d\n", key, state);
+	// printf("key %d %d\n", key, state);
 	struct display_wl* dpy = data;
 	if(dpy->dashboard && state == 1 && ui_key(dpy->ui, key)) {
 		hide(dpy);
+	} else {
+		// TODO: don't always do this. ui should be able to trigger
+		// it i guess
+		refresh(dpy);
 	}
 }
 
