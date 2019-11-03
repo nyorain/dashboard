@@ -45,15 +45,19 @@
 	      in a larger font and the artist in a second line?
 - [x] make modules compile-time options.
       shouldn't require to have sqlite/alsa/mpd installed
+- [ ] pass keyboard modifiers to ui (in ui_key)
+      e.g. allow to use ctrl+n/ctrl+p instead of j/k
+- [ ] fix logging & printfs. Probably best to just use dlg with tags
+      and custom log handler that filters it
 - [x] go all the way with renaming dashboard ->
       dui (desktop/dashboard ui/utility information; some mashup of those)
-- [ ] volume module: show current output/allow switching
+- [x] volume module: show current output/allow switching
       maybe allow to name them manually (e.g. headphone/speaker/monitor).
 	  We probably need to use pulseaudio instead of alsa for that though.
 	  And that requires us to use their sophisticated (speak: complicated)
 	  main loop approach.
 	  See https://github.com/pulseaudio/pulseaudio/blob/master/src/utils/pactl.c
-	- [ ] current bug: when audio output is switched, volume change
+	- [x] current bug: when audio output is switched, volume change
 	      isn't noticed correctly anymore. Fix that for pulse
 	- [x] best solution probably: pulse audio backend
 - more modules

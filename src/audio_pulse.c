@@ -19,9 +19,13 @@ struct mod_audio {
 	const char* default_sink;
 	int sink_idx; // index of active sink
 
+	bool ready;
 	bool initialized;
 	bool muted;
 	unsigned volume;
+
+	// for cycle-output
+	const char* next_sink;
 };
 
 // paml_io
@@ -298,9 +302,14 @@ static void pactx_subscribe_cb(pa_context* pactx,
 		subscription_event_type_to_string(t),
         subscription_event_facility_to_string(t), idx);
 
-	if((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_CHANGE &&
-			(t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SINK) {
+	pa_subscription_event_type_t type = t & PA_SUBSCRIPTION_EVENT_TYPE_MASK;
+	pa_subscription_event_type_t facility = t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK;
+	if(type == PA_SUBSCRIPTION_EVENT_CHANGE && facility == PA_SUBSCRIPTION_EVENT_SINK) {
 		reload(mod);
+	} else if(type == PA_SUBSCRIPTION_EVENT_CHANGE && facility == PA_SUBSCRIPTION_EVENT_SERVER) {
+		pa_operation* o = pa_context_get_server_info(pactx, get_server_info_cb, mod);
+		assert(o);
+		pa_operation_unref(o);
 	}
 }
 
@@ -311,6 +320,7 @@ static void pactx_state_cb(pa_context* pactx, void* data) {
 		return;
 	}
 
+	mod->ready = true;
 	pa_operation* o = NULL;
 	pa_context_set_subscribe_callback(pactx, pactx_subscribe_cb, mod);
 	o = pa_context_subscribe(pactx,
@@ -363,10 +373,82 @@ bool mod_audio_get_muted(struct mod_audio* mod) {
 	return mod->muted;
 }
 
-void mod_audio_cycle_output(struct mod_audio* m) {
-	// TODO
+static void complete_cb(pa_context* c, int success, void* data) {
+    if(!success) {
+		int errno = pa_context_errno(c);
+        printf("Pulse operation failure: %s (%d)", pa_strerror(errno), errno);
+    }
+}
+
+static void move_sink_input_cb(pa_context* c, const pa_sink_input_info* i,
+		int is_last, void* data) {
+	struct mod_audio* mod = data;
+	assert(mod->next_sink);
+
+	if(is_last) {
+		free((void*) mod->next_sink);
+		mod->next_sink = NULL;
+		return;
+	}
+
+	// TODO: only move if old sink is this inputs sink?
+	// not exactly sure what expected behavior for custom clients is
+	pa_operation* o = pa_context_move_sink_input_by_name(c, i->index,
+		mod->next_sink, complete_cb, NULL);
+	pa_operation_unref(o);
+}
+
+static void select_sink(struct mod_audio* mod, const char* name) {
+	// set sink as default sink
+	// new inputs will use that by default
+	// this will trigger our internal callback and so set mod->default_sink
+	pa_operation* o = pa_context_set_default_sink(mod->ctx, name, complete_cb, NULL);
+	pa_operation_unref(o);
+
+	// move all existing inputs to the new sink
+	o = pa_context_get_sink_input_info_list(mod->ctx, move_sink_input_cb, mod);
+	pa_operation_unref(o);
+}
+
+static void set_next_sink_cb(pa_context* c, const pa_sink_info* i,
+		int is_last, void* data) {
+	struct mod_audio* mod = data;
+	if(is_last) {
+		if(!mod->next_sink) {
+			printf("cycle output: no other sink found\n");
+		} else {
+			select_sink(mod, mod->next_sink);
+		}
+
+		return;
+	}
+
+	// TODO: strictly speaking this logic isn't "cycling" (for more
+	// than two sinks). But order here is probably not relevant
+	// anyways, right?
+	assert(i);
+	if(!mod->next_sink && strcmp(mod->default_sink, i->name) != 0) {
+		mod->next_sink = strdup(i->name);
+	}
+}
+
+void mod_audio_cycle_output(struct mod_audio* mod) {
+	if(!mod->ready) {
+		printf("pulse audio module not in ready state\n");
+		return;
+	}
+
+	if(mod->next_sink) {
+		printf("cycle_output operation already pending\n");
+		return;
+	}
+
+	pa_operation* o = pa_context_get_sink_info_list(mod->ctx, set_next_sink_cb, mod);
+	assert(o);
+	pa_operation_unref(o);
 }
 
 void mod_audio_add(struct mod_audio* mod, int percent) {
 	// TODO
+	printf("mod_audio_add: not implemented for pulse yet\n");
 }

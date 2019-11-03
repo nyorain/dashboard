@@ -168,5 +168,6 @@ void mod_audio_cycle_output(struct mod_audio* mod) {
 }
 
 void mod_audio_add(struct mod_audio* mod, int percent) {
-	printf("mod_audio_add: not implemented for alsa\n");
+	// TODO: we can implement that
+	printf("mod_audio_add: not implemented for alsa (yet)\n");
 }
