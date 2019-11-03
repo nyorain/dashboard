@@ -18,7 +18,7 @@
 #include "shared.h"
 #include "pool-buffer.h"
 
-static char* lastLogMessage = NULL;
+static char* last_wl_log = NULL;
 struct display_wl {
 	struct display base;
 	struct ui* ui;
@@ -153,7 +153,7 @@ static bool check_error(struct display_wl* dpy) {
 			"Error: '%s'\n\t"
 			"Last log message: '%s'\n\t"
 			"Will exit dui now.\n", interface_name, error_name,
-			lastLogMessage ? lastLogMessage : "<none>");
+			last_wl_log ? last_wl_log : "<none>");
 	} else {
 		const char* errorName = strerror(err);
 		if(!errorName) {
@@ -163,7 +163,7 @@ static bool check_error(struct display_wl* dpy) {
 		printf("Wayland display has critical non-protocol error: '%s' (%d)\n\t"
 			"Last log message: '%s'\n\t"
 			"Will exit dui now.\n", errorName, err,
-			lastLogMessage ? lastLogMessage : "<none>");
+			last_wl_log ? last_wl_log : "<none>");
 	}
 
 	dui_exit();
@@ -461,19 +461,19 @@ static void check_surface(struct display_wl* dpy) {
 	}
 }
 
-void logHandler(const char* format, va_list vlist) {
+static void log_handler(const char* format, va_list vlist) {
 	va_list vlistcopy;
 	va_copy(vlistcopy, vlist);
 
 	unsigned size = vsnprintf(NULL, 0, format, vlist);
 	va_end(vlist);
 
-	lastLogMessage = realloc(lastLogMessage, size + 1);
-	vsnprintf(lastLogMessage, size + 1, format, vlistcopy);
-	lastLogMessage[size - 1] = '\0'; // replace newline
+	last_wl_log = realloc(last_wl_log, size + 1);
+	vsnprintf(last_wl_log, size + 1, format, vlistcopy);
+	last_wl_log[size - 1] = '\0'; // replace newline
 	va_end(vlistcopy);
 
-	printf("wayland log: %s\n", lastLogMessage);
+	printf("wayland log: %s\n", last_wl_log);
 }
 
 static void toggle_dashboard(struct display* base) {
@@ -557,7 +557,7 @@ struct display* display_create_wl(struct ui* ui) {
 		return NULL;
 	}
 
-	wl_log_set_handler_client(logHandler);
+	wl_log_set_handler_client(log_handler);
 
 	struct display_wl* dpy = calloc(1, sizeof(*dpy));
 	dpy->base.impl = &display_impl;

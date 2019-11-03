@@ -153,7 +153,7 @@ int main() {
 
 	ctx.run = true;
 	while(ctx.run) {
-		mainloop_iterate(ctx.mainloop);
+		mainloop_iterate(ctx.mainloop, true);
 	}
 
 	if(unlink(fifo_path) < 0) {
