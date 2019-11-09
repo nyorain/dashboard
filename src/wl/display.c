@@ -269,7 +269,7 @@ static void hide(struct display_wl* dpy) {
 	dpy->frame_callback = NULL;
 	dpy->width = dpy->height = 0;
 	dpy->configured = false;
-	ml_timer_restart(dpy->timer, NULL);
+	ml_timer_disable(dpy->timer);
 }
 
 static void draw(struct display_wl* dpy);
@@ -317,8 +317,7 @@ static void refresh(struct display_wl* dpy) {
 	draw(dpy);
 }
 
-static void timer_cb(struct ml_timer* timer, const struct timespec* time) {
-	(void) time;
+static void timer_cb(struct ml_timer* timer) {
 	struct display_wl* dpy = ml_timer_get_data(timer);
 	assert(dpy->banner != banner_none);
 	assert(!dpy->dashboard);
@@ -483,7 +482,7 @@ static void toggle_dashboard(struct display* base) {
 	if(dpy->dashboard) {
 		if(dpy->banner != banner_none) { // hide banner
 			dpy->banner = banner_none;
-			ml_timer_restart(dpy->timer, NULL); // disable
+			ml_timer_disable(dpy->timer);
 		}
 
 		dpy->width = start_width;
@@ -537,10 +536,8 @@ static void show_banner(struct display* base, enum banner banner) {
 
 	// set timeout on timer
 	// this will automatically override previously queued timers
-	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
-	ts.tv_sec += banner_time;
-	ml_timer_restart(dpy->timer, &ts);
+	struct timespec ts = { .tv_sec = banner_time };
+	ml_timer_set_time_rel(dpy->timer, ts);
 }
 
 static const struct display_impl display_impl = {
@@ -585,6 +582,7 @@ struct display* display_create_wl(struct ui* ui) {
 
 	dpy->timer = ml_timer_new(dui_mainloop(), NULL, timer_cb);
 	ml_timer_set_data(dpy->timer, dpy);
+	ml_timer_set_clock(dpy->timer, CLOCK_MONOTONIC);
 
 	return &dpy->base;
 }

@@ -21,6 +21,14 @@
 #include "banner.h"
 #include "ui.h"
 
+// NOTE: instead of a ml_timer that watches for time changes so we
+// refresh the dashboard every minute (or second if displaying
+// seconds at some point) we should probably rather use a timerfd
+// with TFD_TIMER_CANCEL_ON_SET so that the timer expires when
+// CLOCK_REALTIME is changed. We currently wouldn't refresh the
+// dashboard immediately when the system time is changed.
+// Not a huge deal for now i guess.
+
 struct ui {
 	struct modules* modules;
 	unsigned notes_count;
@@ -99,10 +107,8 @@ static void draw_dashboard(struct ui* ui, cairo_t* cr,
 
 	// set timer to redraw dashboard when next minute happens
 	int seconds = 60 - tm_info.tm_sec;
-	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
-	ts.tv_sec += seconds;
-	ml_timer_restart(ui->timer, &ts);
+	struct timespec ts = { .tv_sec = seconds };
+	ml_timer_set_time_rel(ui->timer, ts);
 
 	// small line
 	cairo_move_to(cr, 220, 140);
@@ -358,8 +364,7 @@ void ui_draw(struct ui* ui, cairo_t* cr,
 	}
 }
 
-void timer_cb(struct ml_timer* timer, const struct timespec* time) {
-	(void) time;
+void timer_cb(struct ml_timer* timer) {
 	struct ui* ui = ml_timer_get_data(timer);
 	display_redraw(ui->display, banner_none);
 }

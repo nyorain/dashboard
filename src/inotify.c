@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#include <poll.h>
 #include <sys/inotify.h>
 #include <mainloop.h>
 #include "shared.h"
@@ -54,7 +55,7 @@ int add_inotify_watch(const char* pathname, uint32_t mask,
 		}
 
 		ctx.io = ml_io_new(dui_mainloop(), ctx.inotify,
-			ml_io_input, poll_handler);
+			POLLIN, poll_handler);
 	}
 
 	int wd = inotify_add_watch(ctx.inotify, pathname, mask);

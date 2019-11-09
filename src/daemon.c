@@ -67,7 +67,7 @@ static void handle_msg(char* msg, unsigned length) {
 	}
 }
 
-static void fifo_read(struct ml_io* io, enum ml_io_flags revents) {
+static void fifo_read(struct ml_io* io, unsigned revents) {
 	(void) revents;
 
 	int fd = ml_io_get_fd(io);

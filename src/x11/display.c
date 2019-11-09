@@ -139,7 +139,7 @@ static void display_map_dashboard(struct display_x11* ctx) {
 	// disable banner timer if active
 	if(ctx->banner != banner_none) {
 		ctx->banner = banner_none;
-		ml_timer_restart(ctx->timer, NULL); // disable timer
+		ml_timer_disable(ctx->timer);
 		xcb_unmap_window(ctx->connection, ctx->window);
 	}
 
@@ -293,8 +293,7 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 }
 
 
-static void read_timer(struct ml_timer* timer, const struct timespec* time) {
-	(void) time;
+static void banner_timer_cb(struct ml_timer* timer) {
 	struct display_x11* ctx = (struct display_x11*) ml_timer_get_data(timer);
 
 	// hide banner
@@ -342,10 +341,8 @@ static void show_banner(struct display* base, enum banner banner) {
 
 	// set timeout on timer
 	// this will automatically override previously queued timers
-	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
-	ts.tv_sec += banner_time;
-	ml_timer_restart(dpy->timer, &ts);
+	struct timespec ts = { .tv_sec = banner_time };
+	ml_timer_set_time_rel(dpy->timer, ts);
 }
 
 static void destroy(struct display* base) {
@@ -378,29 +375,32 @@ static const struct display_impl x11_impl = {
 	.show_banner = show_banner,
 };
 
-static unsigned fd_query(struct ml_custom* c, struct pollfd* fds,
+// event source
+static void es_prepare(struct ml_custom* c) {
+	struct display_x11* dpy = (struct display_x11*) ml_custom_get_data(c);
+	if(!dpy->pending) {
+		// important that there is no reading (i.e. basically any
+		// call to xcb, xcb_flush as well) after this.
+		// We need this pending mechanism since xcb doesn't tell us
+		// whether it has queued events without popping them
+		dpy->pending = xcb_poll_for_queued_event(dpy->connection);
+	}
+}
+
+static unsigned es_query(struct ml_custom* c, struct pollfd* fds,
 		unsigned n_fds, int* timeout) {
 	struct display_x11* dpy = (struct display_x11*) ml_custom_get_data(c);
 
+	*timeout = dpy->pending ? 0 : -1;
 	if(n_fds > 0) {
 		fds[0].fd = xcb_get_file_descriptor(dpy->connection),
-		fds[0].events = ml_io_input;
-	}
-
-	*timeout = -1;
-	if(!dpy->pending) {
-		// important that there is no reading (i.e. basically any
-		// call to xcb, xcb_flush as well) after this
-		dpy->pending = xcb_poll_for_queued_event(dpy->connection);
-	}
-	if(dpy->pending) {
-		*timeout = 0;
+		fds[0].events = POLLIN;
 	}
 
 	return 1;
 }
 
-static void fd_dispatch(struct ml_custom* c, struct pollfd* fds, unsigned n_fds) {
+static void es_dispatch(struct ml_custom* c, struct pollfd* fds, unsigned n_fds) {
 	(void) fds;
 	(void) n_fds;
 	struct display_x11* dpy = (struct display_x11*) ml_custom_get_data(c);
@@ -430,8 +430,9 @@ static void fd_dispatch(struct ml_custom* c, struct pollfd* fds, unsigned n_fds)
 }
 
 static const struct ml_custom_impl custom_impl = {
-	.query = fd_query,
-	.dispatch = fd_dispatch
+	.prepare = es_prepare,
+	.query = es_query,
+	.dispatch = es_dispatch
 };
 
 struct display* display_create_x11(struct ui* ui) {
@@ -594,8 +595,9 @@ struct display* display_create_x11(struct ui* ui) {
 	ctx->cr = cairo_create(ctx->surface);
 
 	// init timer for banner timeout
-	ctx->timer = ml_timer_new(dui_mainloop(), NULL, read_timer);
+	ctx->timer = ml_timer_new(dui_mainloop(), NULL, banner_timer_cb);
 	ml_timer_set_data(ctx->timer, ctx);
+	ml_timer_set_clock(ctx->timer, CLOCK_MONOTONIC);
 	xcb_flush(ctx->connection);
 
 	return &ctx->display;

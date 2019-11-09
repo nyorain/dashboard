@@ -6,6 +6,7 @@
 #include <string.h>
 #include <assert.h>
 #include <time.h>
+#include <poll.h>
 #include <mpd/client.h>
 #include <mainloop.h>
 #include "shared.h"
@@ -59,7 +60,7 @@ static void mpd_fill(struct mod_music* mpd) {
 	mpd_status_free(status);
 }
 
-static void mpd_read(struct ml_io* io, enum ml_io_flags revents) {
+static void mpd_read(struct ml_io* io, unsigned revents) {
 	(void) revents;
 	struct mod_music* mpd = (struct mod_music*) ml_io_get_data(io);
 
@@ -83,7 +84,7 @@ struct mod_music* mod_music_create(struct display* dpy) {
 
 	// add to poll list
 	mpd->io = ml_io_new(dui_mainloop(), mpd_connection_get_fd(mpd->connection),
-		ml_io_input, mpd_read);
+		POLLIN, mpd_read);
 	ml_io_set_data(mpd->io, mpd);
 
 	// start initial idling
