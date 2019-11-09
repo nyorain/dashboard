@@ -4,7 +4,7 @@
 #include <string.h>
 #include <poll.h>
 #include <pulse/pulseaudio.h>
-#include "mainloop.h"
+#include <pml.h>
 #include "audio.h"
 #include "shared.h"
 #include "display.h"
@@ -37,11 +37,11 @@ struct paml_io_data {
 	struct pa_mainloop_api* api;
 };
 
-static void paml_io_cb(struct ml_io* io, unsigned revents) {
-	struct paml_io_data* iod = ml_io_get_data(io);
+static void paml_io_cb(struct pml_io* io, unsigned revents) {
+	struct paml_io_data* iod = pml_io_get_data(io);
 	assert(iod->cb);
 
-	int fd = ml_io_get_fd(io);
+	int fd = pml_io_get_fd(io);
 	pa_io_event_flags_t pa_revents =
 		(revents & POLLIN ? PA_IO_EVENT_INPUT : 0) |
 		(revents & POLLOUT ? PA_IO_EVENT_OUTPUT : 0) |
@@ -52,17 +52,17 @@ static void paml_io_cb(struct ml_io* io, unsigned revents) {
 
 static pa_io_event* paml_io_new(pa_mainloop_api* api, int fd,
 		pa_io_event_flags_t pa_events, pa_io_event_cb_t cb, void* data) {
-	struct mainloop* ml = (struct mainloop*) api->userdata;
+	struct pml* pml = (struct pml*) api->userdata;
 	unsigned events =
 		(pa_events & PA_IO_EVENT_INPUT ? POLLIN : 0) |
 		(pa_events & PA_IO_EVENT_OUTPUT ? POLLOUT : 0);
-	struct ml_io* io = ml_io_new(ml, fd, events, &paml_io_cb);
+	struct pml_io* io = pml_io_new(pml, fd, events, &paml_io_cb);
 
 	struct paml_io_data* iod = calloc(1, sizeof(*iod));
 	iod->data = data;
 	iod->cb = cb;
 	iod->api = api;
-	ml_io_set_data(io, iod);
+	pml_io_set_data(io, iod);
 	return (pa_io_event*) io;
 }
 
@@ -70,7 +70,7 @@ static void paml_io_enable(pa_io_event* e, pa_io_event_flags_t pa_events) {
 	unsigned events =
 		(pa_events & PA_IO_EVENT_INPUT ? POLLIN : 0) |
 		(pa_events & PA_IO_EVENT_OUTPUT ? POLLOUT : 0);
-	ml_io_set_events((struct ml_io*) e, events);
+	pml_io_set_events((struct pml_io*) e, events);
 }
 
 static void paml_io_free(pa_io_event* e) {
@@ -78,16 +78,16 @@ static void paml_io_free(pa_io_event* e) {
 		return;
 	}
 
-	struct paml_io_data* dd = ml_io_get_data((struct ml_io*) e);
+	struct paml_io_data* dd = pml_io_get_data((struct pml_io*) e);
 	if(dd->destroy_cb) {
 		dd->destroy_cb(dd->api, e, dd->data);
 	}
 	free(dd);
-	ml_io_destroy((struct ml_io*) e);
+	pml_io_destroy((struct pml_io*) e);
 }
 
 static void paml_io_set_destroy(pa_io_event* e, pa_io_event_destroy_cb_t cb) {
-	struct paml_io_data* iod = ml_io_get_data((struct ml_io*) e);
+	struct paml_io_data* iod = pml_io_get_data((struct pml_io*) e);
 	iod->destroy_cb = cb;
 }
 
@@ -99,35 +99,35 @@ struct paml_time_data {
 	struct pa_mainloop_api* api;
 };
 
-static void paml_time_cb(struct ml_timer* t) {
-	struct paml_time_data* td = ml_timer_get_data(t);
+static void paml_time_cb(struct pml_timer* t) {
+	struct paml_time_data* td = pml_timer_get_data(t);
 	assert(td->cb);
 
-	struct timespec time = ml_timer_get_time(t);
+	struct timespec time = pml_timer_get_time(t);
 	struct timeval tv = {time.tv_sec, time.tv_nsec / 1000};
 	td->cb(td->api, (pa_time_event*) t, &tv, td->data);
 }
 
 static pa_time_event* paml_time_new(pa_mainloop_api* api,
 		const struct timeval* tv, pa_time_event_cb_t cb, void* data) {
-	struct mainloop* ml = (struct mainloop*) api->userdata;
+	struct pml* pml = (struct pml*) api->userdata;
 	struct timespec ts = { tv->tv_sec, tv->tv_usec * 1000 };
-	struct ml_timer* t = ml_timer_new(ml, &ts, &paml_time_cb);
+	struct pml_timer* t = pml_timer_new(pml, &ts, &paml_time_cb);
 
 	struct paml_time_data* td = calloc(1, sizeof(*td));
 	td->data = data;
 	td->cb = cb;
 	td->api = api;
-	ml_timer_set_data(t, td);
+	pml_timer_set_data(t, td);
 	return (pa_time_event*) t;
 }
 
 static void paml_time_restart(pa_time_event* e, const struct timeval* tv) {
 	if(!tv) {
-		ml_timer_disable((struct ml_timer*) e);
+		pml_timer_disable((struct pml_timer*) e);
 	} else {
 		struct timespec ts = {tv->tv_sec, 1000 * tv->tv_usec};
-		ml_timer_set_time((struct ml_timer*) e, ts);
+		pml_timer_set_time((struct pml_timer*) e, ts);
 	}
 }
 
@@ -136,16 +136,16 @@ static void paml_time_free(pa_time_event* e) {
 		return;
 	}
 
-	struct paml_time_data* dd = ml_timer_get_data((struct ml_timer*) e);
+	struct paml_time_data* dd = pml_timer_get_data((struct pml_timer*) e);
 	if(dd->destroy_cb) {
 		dd->destroy_cb(dd->api, e, dd->data);
 	}
 	free(dd);
-	ml_timer_destroy((struct ml_timer*) e);
+	pml_timer_destroy((struct pml_timer*) e);
 }
 
 static void paml_time_set_destroy(pa_time_event* e, pa_time_event_destroy_cb_t cb) {
-	struct paml_time_data* td = ml_timer_get_data((struct ml_timer*) e);
+	struct paml_time_data* td = pml_timer_get_data((struct pml_timer*) e);
 	td->destroy_cb = cb;
 }
 
@@ -157,27 +157,27 @@ struct paml_defer_data {
 	struct pa_mainloop_api* api;
 };
 
-static void paml_defer_cb(struct ml_defer* d) {
-	struct paml_defer_data* dd = ml_defer_get_data(d);
+static void paml_defer_cb(struct pml_defer* d) {
+	struct paml_defer_data* dd = pml_defer_get_data(d);
 	assert(dd->cb);
 	dd->cb(dd->api, (pa_defer_event*) d, dd->data);
 }
 
 static pa_defer_event* paml_defer_new(pa_mainloop_api* api,
 		pa_defer_event_cb_t cb, void* data) {
-	struct mainloop* ml = (struct mainloop*) api->userdata;
-	struct ml_defer* d = ml_defer_new(ml, &paml_defer_cb);
+	struct pml* pml = (struct pml*) api->userdata;
+	struct pml_defer* d = pml_defer_new(pml, &paml_defer_cb);
 
 	struct paml_defer_data* dd = calloc(1, sizeof(*dd));
 	dd->data = data;
 	dd->cb = cb;
 	dd->api = api;
-	ml_defer_set_data(d, dd);
+	pml_defer_set_data(d, dd);
 	return (pa_defer_event*) d;
 }
 
 static void paml_defer_enable(pa_defer_event* e, int enable) {
-	ml_defer_enable((struct ml_defer*) e, (bool) enable);
+	pml_defer_enable((struct pml_defer*) e, (bool) enable);
 }
 
 static void paml_defer_free(pa_defer_event* e) {
@@ -185,16 +185,16 @@ static void paml_defer_free(pa_defer_event* e) {
 		return;
 	}
 
-	struct paml_defer_data* dd = ml_defer_get_data((struct ml_defer*) e);
+	struct paml_defer_data* dd = pml_defer_get_data((struct pml_defer*) e);
 	if(dd->destroy_cb) {
 		dd->destroy_cb(dd->api, e, dd->data);
 	}
 	free(dd);
-	ml_defer_destroy((struct ml_defer*) e);
+	pml_defer_destroy((struct pml_defer*) e);
 }
 
 static void paml_defer_set_destroy(pa_defer_event* e, pa_defer_event_destroy_cb_t cb) {
-	struct paml_defer_data* dd = ml_defer_get_data((struct ml_defer*) e);
+	struct paml_defer_data* dd = pml_defer_get_data((struct pml_defer*) e);
 	dd->destroy_cb = cb;
 }
 
@@ -358,7 +358,7 @@ struct mod_audio* mod_audio_create(struct display* dpy) {
 	mod->dpy = dpy;
 
 	mod->pa_api = pulse_mainloop_api;
-	mod->pa_api.userdata = dui_mainloop();
+	mod->pa_api.userdata = dui_pml();
 	mod->ctx = pa_context_new(&mod->pa_api, "dui");
     pa_context_set_state_callback(mod->ctx, pactx_state_cb, mod);
 
@@ -371,20 +371,20 @@ struct mod_audio* mod_audio_create(struct display* dpy) {
 	return mod;
 }
 
-void io_destroy_paml_cb(struct ml_io* io) {
-	if(ml_io_get_cb(io) == paml_io_cb) {
+void io_destroy_paml_cb(struct pml_io* io) {
+	if(pml_io_get_cb(io) == paml_io_cb) {
 		paml_io_free((pa_io_event*) io);
 	}
 }
 
-void timer_destroy_paml_cb(struct ml_timer* t) {
-	if(ml_timer_get_cb(t) == paml_time_cb) {
+void timer_destroy_paml_cb(struct pml_timer* t) {
+	if(pml_timer_get_cb(t) == paml_time_cb) {
 		paml_time_free((pa_time_event*) t);
 	}
 }
 
-void defer_destroy_paml_cb(struct ml_defer* d) {
-	if(ml_defer_get_cb(d) == paml_defer_cb) {
+void defer_destroy_paml_cb(struct pml_defer* d) {
+	if(pml_defer_get_cb(d) == paml_defer_cb) {
 		paml_defer_free((pa_defer_event*) d);
 	}
 }
@@ -394,10 +394,10 @@ void mod_audio_destroy(struct mod_audio* mod) {
 
 	// make sure to correctly destroy all remaining event sources associated
 	// with pulse audio
-	struct mainloop* ml = dui_mainloop();
-	mainloop_for_each_io(ml, io_destroy_paml_cb);
-	mainloop_for_each_timer(ml, timer_destroy_paml_cb);
-	mainloop_for_each_defer(ml, defer_destroy_paml_cb);
+	struct pml* pml = dui_pml();
+	pml_for_each_io(pml, io_destroy_paml_cb);
+	pml_for_each_timer(pml, timer_destroy_paml_cb);
+	pml_for_each_defer(pml, defer_destroy_paml_cb);
 	free(mod);
 }
 

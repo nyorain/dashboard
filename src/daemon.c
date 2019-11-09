@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include <mainloop.h>
+#include <pml.h>
 #include "shared.h"
 #include "display.h"
 #include "music.h"
@@ -26,7 +26,7 @@
 
 struct context {
 	int fifo;
-	struct mainloop* mainloop;
+	struct pml* pml;
 
 	struct ui* ui;
 	struct display* display;
@@ -67,10 +67,10 @@ static void handle_msg(char* msg, unsigned length) {
 	}
 }
 
-static void fifo_read(struct ml_io* io, unsigned revents) {
+static void fifo_read(struct pml_io* io, unsigned revents) {
 	(void) revents;
 
-	int fd = ml_io_get_fd(io);
+	int fd = pml_io_get_fd(io);
 	char buf[256];
 	int ret = read(fd, buf, sizeof(buf) - 1);
 	if(ret > 0) {
@@ -91,8 +91,8 @@ static void fifo_read(struct ml_io* io, unsigned revents) {
 	}
 }
 
-struct mainloop* dui_mainloop(void) {
-	return ctx.mainloop;
+struct pml* dui_pml(void) {
+	return ctx.pml;
 }
 
 void dui_exit(void) {
@@ -100,8 +100,8 @@ void dui_exit(void) {
 }
 
 int main() {
-	ctx.mainloop = mainloop_new();
-	if(!ctx.mainloop) {
+	ctx.pml = pml_new();
+	if(!ctx.pml) {
 		return EXIT_FAILURE;
 	}
 
@@ -132,7 +132,7 @@ int main() {
 		return EXIT_FAILURE;
 	}
 
-	ml_io_new(ctx.mainloop, ctx.fifo, POLLIN, fifo_read);
+	pml_io_new(ctx.pml, ctx.fifo, POLLIN, fifo_read);
 
 	// try to create all modules
 	ctx.ui = ui_create(&ctx.modules);
@@ -153,7 +153,7 @@ int main() {
 
 	ctx.run = true;
 	while(ctx.run) {
-		mainloop_iterate(ctx.mainloop, true);
+		pml_iterate(ctx.pml, true);
 	}
 
 	if(unlink(fifo_path) < 0) {
@@ -167,5 +167,5 @@ int main() {
 	if(ctx.modules.brightness) mod_brightness_destroy(ctx.modules.brightness);
 	display_destroy(ctx.display);
 	ui_destroy(ctx.ui);
-	mainloop_destroy(ctx.mainloop);
+	pml_destroy(ctx.pml);
 }

@@ -4,7 +4,7 @@
 #include <poll.h>
 #include <limits.h>
 #include <playerctl/playerctl.h>
-#include <mainloop.h>
+#include <pml.h>
 #include "shared.h"
 #include "music.h"
 #include "display.h"
@@ -19,7 +19,7 @@ struct mod_music {
 	char songbuf[256]; // "artist - title"
 	PlayerctlPlayer* player; // selected player
 	int sid_metadata; // for signal disconnecting
-	struct ml_custom* glib_source;
+	struct pml_custom* glib_source;
 };
 
 static gboolean status_callback(PlayerctlPlayer* player,
@@ -184,8 +184,8 @@ static void player_vanished_callback(PlayerctlPlayerManager* manager,
 	}
 }
 
-static void glib_prepare(struct ml_custom* c) {
-	GMainContext* ctx = ml_custom_get_data(c);
+static void glib_prepare(struct pml_custom* c) {
+	GMainContext* ctx = pml_custom_get_data(c);
 	gint prio;
 	g_main_context_prepare(ctx, &prio);
 }
@@ -201,21 +201,21 @@ static void glib_prepare(struct ml_custom* c) {
 //
 // we could otherwise make the custom userdata a cached GPollFD array
 // that is realloc'd when needed. Probably cleaner/more portable version
-static unsigned glib_query(struct ml_custom* c, struct pollfd* fds,
+static unsigned glib_query(struct pml_custom* c, struct pollfd* fds,
 		unsigned n_fds, int* timeout) {
 	const gint prio = INT_MAX;
-	GMainContext* ctx = ml_custom_get_data(c);
+	GMainContext* ctx = pml_custom_get_data(c);
 	unsigned ret = g_main_context_query(ctx, prio, timeout, (GPollFD*) fds, n_fds);
 	return ret;
 }
 
-static void glib_dispatch(struct ml_custom* c, struct pollfd* fds, unsigned n_fds) {
-	GMainContext* ctx = ml_custom_get_data(c);
+static void glib_dispatch(struct pml_custom* c, struct pollfd* fds, unsigned n_fds) {
+	GMainContext* ctx = pml_custom_get_data(c);
 	g_main_context_check(ctx, INT_MAX, (GPollFD*) fds, n_fds);
 	g_main_context_dispatch(ctx);
 }
 
-static const struct ml_custom_impl glib_custom_impl = {
+static const struct pml_custom_impl glib_custom_impl = {
 	.prepare = glib_prepare,
 	.query = glib_query,
 	.dispatch = glib_dispatch
@@ -265,14 +265,14 @@ struct mod_music* mod_music_create(struct display* dpy) {
 	GMainContext* gctx = g_main_context_default();
 	g_main_context_acquire(gctx);
 
-	pc->glib_source = ml_custom_new(dui_mainloop(), &glib_custom_impl);
-	ml_custom_set_data(pc->glib_source, gctx);
+	pc->glib_source = pml_custom_new(dui_pml(), &glib_custom_impl);
+	pml_custom_set_data(pc->glib_source, gctx);
 
 	return pc;
 }
 
 void mod_music_destroy(struct mod_music* pc) {
-	if(pc->glib_source) ml_custom_destroy(pc->glib_source);
+	if(pc->glib_source) pml_custom_destroy(pc->glib_source);
 	if(pc->manager) g_object_unref(pc->manager);
 	free(pc);
 }

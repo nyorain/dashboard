@@ -19,7 +19,7 @@
 #include <cairo/cairo.h>
 #include <cairo/cairo-xcb.h>
 
-#include <mainloop.h>
+#include <pml.h>
 #include "shared.h"
 #include "display.h"
 #include "ui.h"
@@ -57,8 +57,8 @@ struct display_x11 {
 	bool dashboard; // dashboard currently mapped
 
 	xcb_generic_event_t* pending;
-	struct ml_custom* source;
-	struct ml_timer* timer;
+	struct pml_custom* source;
+	struct pml_timer* timer;
 };
 
 // Simple macro that checks cookies returned by xcb *_checked calls
@@ -139,7 +139,7 @@ static void display_map_dashboard(struct display_x11* ctx) {
 	// disable banner timer if active
 	if(ctx->banner != banner_none) {
 		ctx->banner = banner_none;
-		ml_timer_disable(ctx->timer);
+		pml_timer_disable(ctx->timer);
 		xcb_unmap_window(ctx->connection, ctx->window);
 	}
 
@@ -293,8 +293,8 @@ void process(struct display_x11* ctx, xcb_generic_event_t* gev) {
 }
 
 
-static void banner_timer_cb(struct ml_timer* timer) {
-	struct display_x11* ctx = (struct display_x11*) ml_timer_get_data(timer);
+static void banner_timer_cb(struct pml_timer* timer) {
+	struct display_x11* ctx = (struct display_x11*) pml_timer_get_data(timer);
 
 	// hide banner
 	ctx->banner = banner_none;
@@ -342,14 +342,14 @@ static void show_banner(struct display* base, enum banner banner) {
 	// set timeout on timer
 	// this will automatically override previously queued timers
 	struct timespec ts = { .tv_sec = banner_time };
-	ml_timer_set_time_rel(dpy->timer, ts);
+	pml_timer_set_time_rel(dpy->timer, ts);
 }
 
 static void destroy(struct display* base) {
 	struct display_x11* dpy = (struct display_x11*) base;
 	if(dpy->pending) free(dpy->pending);
-	if(dpy->timer) ml_timer_destroy(dpy->timer);
-	if(dpy->source) ml_custom_destroy(dpy->source);
+	if(dpy->timer) pml_timer_destroy(dpy->timer);
+	if(dpy->source) pml_custom_destroy(dpy->source);
 	if(dpy->cr) cairo_destroy(dpy->cr);
 	if(dpy->surface) cairo_surface_destroy(dpy->surface);
 	if(dpy->connection) {
@@ -376,8 +376,8 @@ static const struct display_impl x11_impl = {
 };
 
 // event source
-static void es_prepare(struct ml_custom* c) {
-	struct display_x11* dpy = (struct display_x11*) ml_custom_get_data(c);
+static void es_prepare(struct pml_custom* c) {
+	struct display_x11* dpy = (struct display_x11*) pml_custom_get_data(c);
 	if(!dpy->pending) {
 		// important that there is no reading (i.e. basically any
 		// call to xcb, xcb_flush as well) after this.
@@ -387,9 +387,9 @@ static void es_prepare(struct ml_custom* c) {
 	}
 }
 
-static unsigned es_query(struct ml_custom* c, struct pollfd* fds,
+static unsigned es_query(struct pml_custom* c, struct pollfd* fds,
 		unsigned n_fds, int* timeout) {
-	struct display_x11* dpy = (struct display_x11*) ml_custom_get_data(c);
+	struct display_x11* dpy = (struct display_x11*) pml_custom_get_data(c);
 
 	*timeout = dpy->pending ? 0 : -1;
 	if(n_fds > 0) {
@@ -400,10 +400,10 @@ static unsigned es_query(struct ml_custom* c, struct pollfd* fds,
 	return 1;
 }
 
-static void es_dispatch(struct ml_custom* c, struct pollfd* fds, unsigned n_fds) {
+static void es_dispatch(struct pml_custom* c, struct pollfd* fds, unsigned n_fds) {
 	(void) fds;
 	(void) n_fds;
-	struct display_x11* dpy = (struct display_x11*) ml_custom_get_data(c);
+	struct display_x11* dpy = (struct display_x11*) pml_custom_get_data(c);
 
 	// check for error
 	int err = xcb_connection_has_error(dpy->connection);
@@ -429,7 +429,7 @@ static void es_dispatch(struct ml_custom* c, struct pollfd* fds, unsigned n_fds)
 	xcb_flush(dpy->connection);
 }
 
-static const struct ml_custom_impl custom_impl = {
+static const struct pml_custom_impl custom_impl = {
 	.prepare = es_prepare,
 	.query = es_query,
 	.dispatch = es_dispatch
@@ -449,8 +449,8 @@ struct display* display_create_x11(struct ui* ui) {
 		goto err;
 	}
 
-	ctx->source = ml_custom_new(dui_mainloop(), &custom_impl);
-	ml_custom_set_data(ctx->source, ctx);
+	ctx->source = pml_custom_new(dui_pml(), &custom_impl);
+	pml_custom_set_data(ctx->source, ctx);
 
 	ctx->screen = xcb_setup_roots_iterator(xcb_get_setup(ctx->connection)).data;
 
@@ -595,9 +595,9 @@ struct display* display_create_x11(struct ui* ui) {
 	ctx->cr = cairo_create(ctx->surface);
 
 	// init timer for banner timeout
-	ctx->timer = ml_timer_new(dui_mainloop(), NULL, banner_timer_cb);
-	ml_timer_set_data(ctx->timer, ctx);
-	ml_timer_set_clock(ctx->timer, CLOCK_MONOTONIC);
+	ctx->timer = pml_timer_new(dui_pml(), NULL, banner_timer_cb);
+	pml_timer_set_data(ctx->timer, ctx);
+	pml_timer_set_clock(ctx->timer, CLOCK_MONOTONIC);
 	xcb_flush(ctx->connection);
 
 	return &ctx->display;

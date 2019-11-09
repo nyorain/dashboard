@@ -10,8 +10,8 @@
 #include <unistd.h>
 #include <cairo/cairo.h>
 #include <linux/input-event-codes.h>
+#include <pml.h>
 #include "shared.h"
-#include "mainloop.h"
 #include "display.h"
 #include "audio.h"
 #include "music.h"
@@ -34,7 +34,7 @@ struct ui {
 	unsigned notes_count;
 	const struct note* notes;
 	unsigned active_note;
-	struct ml_timer* timer;
+	struct pml_timer* timer;
 	struct display* display;
 };
 
@@ -108,7 +108,7 @@ static void draw_dashboard(struct ui* ui, cairo_t* cr,
 	// set timer to redraw dashboard when next minute happens
 	int seconds = 60 - tm_info.tm_sec;
 	struct timespec ts = { .tv_sec = seconds };
-	ml_timer_set_time_rel(ui->timer, ts);
+	pml_timer_set_time_rel(ui->timer, ts);
 
 	// small line
 	cairo_move_to(cr, 220, 140);
@@ -364,16 +364,16 @@ void ui_draw(struct ui* ui, cairo_t* cr,
 	}
 }
 
-void timer_cb(struct ml_timer* timer) {
-	struct ui* ui = ml_timer_get_data(timer);
+void timer_cb(struct pml_timer* timer) {
+	struct ui* ui = pml_timer_get_data(timer);
 	display_redraw(ui->display, banner_none);
 }
 
 struct ui* ui_create(struct modules* modules) {
 	struct ui* ui = calloc(1, sizeof(*ui));
 	ui->modules = modules;
-	ui->timer = ml_timer_new(dui_mainloop(), NULL, timer_cb);
-	ml_timer_set_data(ui->timer, ui);
+	ui->timer = pml_timer_new(dui_pml(), NULL, timer_cb);
+	pml_timer_set_data(ui->timer, ui);
 	return ui;
 }
 
@@ -430,7 +430,7 @@ bool ui_key(struct ui* ui, unsigned keycode) {
 
 void ui_destroy(struct ui* ui) {
 	if(ui->timer) {
-		ml_timer_destroy(ui->timer);
+		pml_timer_destroy(ui->timer);
 	}
 	free(ui);
 }

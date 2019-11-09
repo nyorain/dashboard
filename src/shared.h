@@ -5,8 +5,8 @@
 #include <stdint.h>
 #include <assert.h>
 
-struct mainloop;
-struct mainloop* dui_mainloop(void);
+struct pml;
+struct pml* dui_pml(void);
 void dui_exit(void);
 
 struct inotify_event; // sys/inotify.h

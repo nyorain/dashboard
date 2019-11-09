@@ -25,7 +25,7 @@ cc = meson.get_compiler('c')
 dep_cairo = dependency('cairo')
 dep_threads = dependency('threads')
 dep_m = cc.find_library('m', required: false)
-dep_ml = dependency('posix_mainloop', fallback: ['ml', 'posix_mainloop_dep'])
+dep_ml = dependency('pml', fallback: ['pml', 'pml_dep'])
 
 # modules
 dep_sqlite3 = dependency('sqlite3', required: get_option('with-notes'))

@@ -10,7 +10,7 @@
 #include <wayland-client.h>
 #include <wayland-client-protocol.h>
 #include <cairo/cairo.h>
-#include <mainloop.h>
+#include <pml.h>
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
 #include "display.h"
@@ -37,11 +37,11 @@ struct display_wl {
 	struct zwlr_layer_surface_v1* layer_surface;
 	struct pool_buffer buffers[2];
 
-	struct ml_custom* source;
-	struct ml_timer* timer;
-	bool reading_display;
+	struct pml_custom* source;
+	struct pml_timer* timer;
 
 	bool error;
+	bool ready; // whether there are events to be dispatched
 	bool configured;
 	bool dashboard;
 	enum banner banner;
@@ -170,37 +170,32 @@ static bool check_error(struct display_wl* dpy) {
 	return true;
 }
 
-static void fd_prepare(struct ml_custom* c) {
-	struct display_wl* dpy = (struct display_wl*) ml_custom_get_data(c);
+static void fd_prepare(struct pml_custom* c) {
+	struct display_wl* dpy = (struct display_wl*) pml_custom_get_data(c);
 	if(check_error(dpy)) {
 		return;
 	}
 
-	// this can happen if the previous poll failed
-	if(dpy->reading_display) {
-		wl_display_cancel_read(dpy->display);
-		dpy->reading_display = false;
-	}
-
-	// wl_display_prepare_read returns -1 if the event queue wasn't empty
-	// we simply dispatch the pending events
-	while(wl_display_prepare_read(dpy->display) == -1) {
-		wl_display_dispatch_pending(dpy->display);
-	}
-
-	dpy->reading_display = true;
 	int ret = wl_display_flush(dpy->display);
-	if(ret == -1) {
+	if(ret == -1 && errno != EAGAIN) {
 		// TODO: we should handle EAGAIN case, no more data can
 		// be written in that case. We could poll the display for
 		// POLLOUT
 		printf("wl_display_flush: %s (%d)\n", strerror(errno), errno);
 	}
+
+	// wl_display_prepare_read returns -1 if the event queue wasn't empty.
+	// We remember that there are already events to be dispatched
+	// (ready = true)
+	dpy->ready = false;
+	if(wl_display_prepare_read(dpy->display) == -1) {
+		dpy->ready = true;
+	}
 }
 
-static unsigned fd_query(struct ml_custom* c, struct pollfd* fds,
+static unsigned fd_query(struct pml_custom* c, struct pollfd* fds,
 		unsigned n_fds, int* timeout) {
-	struct display_wl* dpy = (struct display_wl*) ml_custom_get_data(c);
+	struct display_wl* dpy = (struct display_wl*) pml_custom_get_data(c);
 	if(dpy->error) {
 		*timeout = 0;
 		return 0;
@@ -211,19 +206,27 @@ static unsigned fd_query(struct ml_custom* c, struct pollfd* fds,
 		fds[0].events = POLLIN | POLLERR;
 	}
 
-	*timeout = -1;
+	*timeout = dpy->ready ? 0 : -1;
 	return 1;
 }
 
-static void fd_dispatch(struct ml_custom* c, struct pollfd* fds, unsigned n_fds) {
+static void fd_dispatch(struct pml_custom* c, struct pollfd* fds, unsigned n_fds) {
 	(void) fds;
 	(void) n_fds;
 
-	struct display_wl* dpy = (struct display_wl*) ml_custom_get_data(c);
+	struct display_wl* dpy = (struct display_wl*) pml_custom_get_data(c);
+	bool ready = dpy->ready;
+	dpy->ready = false;
 
 	// check for error
 	if(check_error(dpy)) {
 		return;
+	}
+
+	if(ready) {
+		while(wl_display_prepare_read(dpy->display) == -1) {
+			wl_display_dispatch_pending(dpy->display);
+		}
 	}
 
 	// dispatch events
@@ -233,11 +236,10 @@ static void fd_dispatch(struct ml_custom* c, struct pollfd* fds, unsigned n_fds)
 		return;
 	}
 
-	dpy->reading_display = false;
 	wl_display_dispatch_pending(dpy->display);
 }
 
-static const struct ml_custom_impl custom_impl = {
+static const struct pml_custom_impl custom_impl = {
 	.prepare = fd_prepare,
 	.query = fd_query,
 	.dispatch = fd_dispatch
@@ -255,7 +257,7 @@ static void destroy(struct display* base) {
 	if(dpy->layer_shell) zwlr_layer_shell_v1_destroy(dpy->layer_shell);
 	if(dpy->registry) wl_registry_destroy(dpy->registry);
 	if(dpy->display) wl_display_disconnect(dpy->display);
-	if(dpy->source) ml_custom_destroy(dpy->source);
+	if(dpy->source) pml_custom_destroy(dpy->source);
 }
 
 static void hide(struct display_wl* dpy) {
@@ -269,7 +271,7 @@ static void hide(struct display_wl* dpy) {
 	dpy->frame_callback = NULL;
 	dpy->width = dpy->height = 0;
 	dpy->configured = false;
-	ml_timer_disable(dpy->timer);
+	pml_timer_disable(dpy->timer);
 }
 
 static void draw(struct display_wl* dpy);
@@ -317,8 +319,8 @@ static void refresh(struct display_wl* dpy) {
 	draw(dpy);
 }
 
-static void timer_cb(struct ml_timer* timer) {
-	struct display_wl* dpy = ml_timer_get_data(timer);
+static void timer_cb(struct pml_timer* timer) {
+	struct display_wl* dpy = pml_timer_get_data(timer);
 	assert(dpy->banner != banner_none);
 	assert(!dpy->dashboard);
 	hide(dpy);
@@ -482,7 +484,7 @@ static void toggle_dashboard(struct display* base) {
 	if(dpy->dashboard) {
 		if(dpy->banner != banner_none) { // hide banner
 			dpy->banner = banner_none;
-			ml_timer_disable(dpy->timer);
+			pml_timer_disable(dpy->timer);
 		}
 
 		dpy->width = start_width;
@@ -537,7 +539,7 @@ static void show_banner(struct display* base, enum banner banner) {
 	// set timeout on timer
 	// this will automatically override previously queued timers
 	struct timespec ts = { .tv_sec = banner_time };
-	ml_timer_set_time_rel(dpy->timer, ts);
+	pml_timer_set_time_rel(dpy->timer, ts);
 }
 
 static const struct display_impl display_impl = {
@@ -577,12 +579,12 @@ struct display* display_create_wl(struct ui* ui) {
 	}
 
 	// sources & timers
-	dpy->source = ml_custom_new(dui_mainloop(), &custom_impl);
-	ml_custom_set_data(dpy->source, dpy);
+	dpy->source = pml_custom_new(dui_pml(), &custom_impl);
+	pml_custom_set_data(dpy->source, dpy);
 
-	dpy->timer = ml_timer_new(dui_mainloop(), NULL, timer_cb);
-	ml_timer_set_data(dpy->timer, dpy);
-	ml_timer_set_clock(dpy->timer, CLOCK_MONOTONIC);
+	dpy->timer = pml_timer_new(dui_pml(), NULL, timer_cb);
+	pml_timer_set_data(dpy->timer, dpy);
+	pml_timer_set_clock(dpy->timer, CLOCK_MONOTONIC);
 
 	return &dpy->base;
 }

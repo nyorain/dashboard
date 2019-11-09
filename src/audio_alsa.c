@@ -8,7 +8,7 @@
 #include <alloca.h>
 #include <alsa/asoundlib.h>
 #include <pthread.h>
-#include <mainloop.h>
+#include <pml.h>
 #include "shared.h"
 #include "audio.h"
 #include "display.h"
@@ -18,7 +18,7 @@ struct mod_audio {
 	snd_mixer_t* handle;
 	snd_mixer_elem_t* elem;
 	struct display* dpy;
-	struct ml_custom* source;
+	struct pml_custom* source;
 };
 
 static int elem_callback(snd_mixer_elem_t* elem, unsigned int mask){
@@ -30,9 +30,9 @@ static int elem_callback(snd_mixer_elem_t* elem, unsigned int mask){
 	return 0;
 }
 
-static unsigned source_query(struct ml_custom* c, struct pollfd* fds,
+static unsigned source_query(struct pml_custom* c, struct pollfd* fds,
 		unsigned n_fds, int* timeout) {
-	struct mod_audio* mod = (struct mod_audio*) ml_custom_get_data(c);
+	struct mod_audio* mod = (struct mod_audio*) pml_custom_get_data(c);
 	int count = snd_mixer_poll_descriptors_count(mod->handle);
 	if(count < 0) {
 		printf("snd_mixer_poll_descriptors_count: %d\n", count);
@@ -50,9 +50,9 @@ static unsigned source_query(struct ml_custom* c, struct pollfd* fds,
 	return count;
 }
 
-static void source_dispatch(struct ml_custom* c, struct pollfd* fds,
+static void source_dispatch(struct pml_custom* c, struct pollfd* fds,
 		unsigned n_fds) {
-	struct mod_audio* mod = (struct mod_audio*) ml_custom_get_data(c);
+	struct mod_audio* mod = (struct mod_audio*) pml_custom_get_data(c);
 	unsigned short revents;
 	snd_mixer_poll_descriptors_revents(mod->handle, fds, n_fds,
 		&revents);
@@ -61,7 +61,7 @@ static void source_dispatch(struct ml_custom* c, struct pollfd* fds,
 	}
 }
 
-static const struct ml_custom_impl custom_impl = {
+static const struct pml_custom_impl custom_impl = {
 	.query = source_query,
 	.dispatch = source_dispatch,
 };
@@ -120,8 +120,8 @@ struct mod_audio* mod_audio_create(struct display* dpy) {
 	snd_mixer_elem_set_callback_private(mod->elem, mod);
 	snd_mixer_elem_set_callback(mod->elem, elem_callback);
 
-	mod->source = ml_custom_new(dui_mainloop(), &custom_impl);
-	ml_custom_set_data(mod->source, mod);
+	mod->source = pml_custom_new(dui_pml(), &custom_impl);
+	pml_custom_set_data(mod->source, mod);
 
 	return mod;
 
@@ -132,7 +132,7 @@ err:
 
 void mod_audio_destroy(struct mod_audio* volume) {
 	if(volume->source) {
-		ml_custom_destroy(volume->source);
+		pml_custom_destroy(volume->source);
 	}
 	if(volume->handle) {
 		snd_mixer_close(volume->handle);
